@@ -15,6 +15,9 @@ import json
 # Salesforce integration
 from salesforce_service import salesforce, sf_config, get_salesforce_status, FIELD_MAPPINGS
 
+# Claude AI integration
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -190,7 +193,13 @@ def generate_mock_data():
             "start_date": now - timedelta(days=5),
             "end_date": now + timedelta(days=25),
             "assigned_technician_id": "tech-001",
-            "equipment_count": 24
+            "equipment_count": 24,
+            "primary_contact": {
+                "name": "James Wilson",
+                "title": "Facilities Manager",
+                "phone": "+1 (212) 555-0147",
+                "email": "j.wilson@acmecorp.com"
+            }
         },
         {
             "id": "proj-002", 
@@ -204,7 +213,13 @@ def generate_mock_data():
             "start_date": now,
             "end_date": now + timedelta(days=10),
             "assigned_technician_id": "tech-001",
-            "equipment_count": 36
+            "equipment_count": 36,
+            "primary_contact": {
+                "name": "Dr. Sarah Mitchell",
+                "title": "Chief of Operations",
+                "phone": "+1 (312) 555-0289",
+                "email": "s.mitchell@metrohealthcare.com"
+            }
         },
         {
             "id": "proj-003", 
@@ -218,7 +233,13 @@ def generate_mock_data():
             "start_date": now + timedelta(days=3),
             "end_date": now + timedelta(days=7),
             "assigned_technician_id": "tech-001",
-            "equipment_count": 8
+            "equipment_count": 8,
+            "primary_contact": {
+                "name": "Robert Chen",
+                "title": "Property Manager",
+                "phone": "+1 (206) 555-0193",
+                "email": "r.chen@pacificretail.com"
+            }
         },
     ]
     
@@ -555,6 +576,137 @@ async def get_service_logs(project_id: str):
     """Get all service logs for a project"""
     logs = await db.service_logs.find({"project_id": project_id}).sort("created_at", -1).to_list(100)
     return {"service_logs": serialize_doc(logs)}
+
+# ============ Claude AI Integration ============
+
+LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+
+@api_router.post("/ai/troubleshoot")
+async def ai_troubleshoot(data: dict):
+    """AI Troubleshooting Assistant - Claude analyzes equipment issues and suggests fixes"""
+    equipment_name = data.get("equipment_name", "")
+    issue = data.get("issue", "")
+    readings = data.get("readings", [])
+    
+    readings_text = ""
+    for r in readings:
+        readings_text += f"- {r.get('type','')}: Pre={r.get('pre','N/A')}, Post={r.get('post','N/A')}, Unit={r.get('unit','')}\n"
+    
+    session_id = f"troubleshoot-{uuid.uuid4().hex[:8]}"
+    chat = LlmChat(
+        api_key=LLM_KEY,
+        session_id=session_id,
+        system_message="""You are a Blue Box Air, Inc. expert coil management technician assistant. 
+You help field technicians troubleshoot equipment issues. You specialize in:
+- Coil cleaning and management
+- Differential pressure readings (inWC)
+- Airflow measurements (FPM)
+- Temperature and humidity diagnostics
+- Bio-Automation systems
+
+Provide clear, actionable troubleshooting steps. Be concise and practical. 
+Format your response with numbered steps when giving instructions."""
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    
+    prompt = f"Equipment: {equipment_name}\nIssue: {issue}"
+    if readings_text:
+        prompt += f"\n\nCurrent Readings:\n{readings_text}"
+    prompt += "\n\nProvide troubleshooting steps and recommendations."
+    
+    msg = UserMessage(text=prompt)
+    response = await chat.send_message(msg)
+    
+    # Store in DB for history
+    await db.ai_chats.insert_one({
+        "type": "troubleshoot",
+        "equipment_name": equipment_name,
+        "issue": issue,
+        "response": response,
+        "created_at": datetime.utcnow().isoformat(),
+    })
+    
+    return {"response": response}
+
+@api_router.post("/ai/report-summary")
+async def ai_report_summary(data: dict):
+    """Smart Report Summaries - Claude generates written summaries from readings data"""
+    project_name = data.get("project_name", "")
+    equipment_reports = data.get("equipment_reports", [])
+    
+    report_text = f"Project: {project_name}\n\n"
+    for eq in equipment_reports:
+        equip = eq.get("equipment", {})
+        report_text += f"Equipment: {equip.get('name', 'Unknown')} ({equip.get('equipment_type', '')})\n"
+        for comp in eq.get("comparisons", []):
+            if comp.get("pre") or comp.get("post"):
+                pre_val = comp["pre"]["value"] if comp.get("pre") else "N/A"
+                post_val = comp["post"]["value"] if comp.get("post") else "N/A"
+                diff = comp.get("difference", "N/A")
+                pct = comp.get("percent_change", "N/A")
+                report_text += f"  - {comp['reading_type']}: Pre={pre_val}, Post={post_val}, Change={diff} {comp.get('unit','')} ({pct}%)\n"
+        report_text += "\n"
+    
+    session_id = f"report-{uuid.uuid4().hex[:8]}"
+    chat = LlmChat(
+        api_key=LLM_KEY,
+        session_id=session_id,
+        system_message="""You are a Blue Box Air, Inc. service report writer. Generate professional, concise service report summaries.
+Include: overview of work performed, key findings from readings, improvements achieved, and recommendations.
+Use a professional yet readable tone. Keep summaries under 200 words."""
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    
+    msg = UserMessage(text=f"Generate a service report summary for this data:\n\n{report_text}")
+    response = await chat.send_message(msg)
+    
+    return {"summary": response}
+
+@api_router.post("/ai/chat")
+async def ai_chat(data: dict):
+    """AI Chatbot - General assistant for Blue Box Air technicians"""
+    message = data.get("message", "")
+    session_id = data.get("session_id", f"chat-{uuid.uuid4().hex[:8]}")
+    
+    # Load chat history from DB
+    history = await db.ai_chats.find(
+        {"session_id": session_id, "type": "chat"}
+    ).sort("created_at", 1).to_list(50)
+    
+    chat = LlmChat(
+        api_key=LLM_KEY,
+        session_id=session_id,
+        system_message="""You are the Blue Box Air, Inc. AI Assistant, specializing in coil management solutions.
+You help technicians with:
+- Equipment troubleshooting and diagnostics
+- Coil cleaning procedures and best practices
+- Reading interpretation (differential pressure inWC, airflow FPM, temperature, humidity)
+- Bio-Automation installation guidance
+- Pricing and service information
+- FAQs about Blue Box Air processes
+
+Be helpful, concise, and professional. If you don't know something specific to Blue Box Air, 
+provide general HVAC/coil management guidance and note that the technician should verify with their supervisor."""
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    
+    msg = UserMessage(text=message)
+    response = await chat.send_message(msg)
+    
+    # Store chat message
+    await db.ai_chats.insert_one({
+        "type": "chat",
+        "session_id": session_id,
+        "role": "user",
+        "message": message,
+        "created_at": datetime.utcnow().isoformat(),
+    })
+    await db.ai_chats.insert_one({
+        "type": "chat",
+        "session_id": session_id,
+        "role": "assistant",
+        "message": response,
+        "created_at": datetime.utcnow().isoformat(),
+    })
+    
+    return {"response": response, "session_id": session_id}
 
 # ============ Dashboard Stats ============
 

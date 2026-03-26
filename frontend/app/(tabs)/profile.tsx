@@ -326,8 +326,16 @@ export default function ProfileScreen() {
                   <View style={styles.resourceCardBody}>
                     <View style={styles.underConstructionBanner}>
                       <Ionicons name="construct" size={18} color="#f59e0b" />
-                      <Text style={styles.underConstructionText}>Under Construction — Content coming soon</Text>
+                      <Text style={styles.underConstructionText}>Under Construction — More content coming soon</Text>
                     </View>
+                    <TouchableOpacity style={styles.resourceItem} onPress={() => {
+                      const url = 'https://www.youtube.com/watch?v=I-ORRvYr5Fg';
+                      if (Platform.OS === 'web') { window.open(url, '_blank'); } else { import('expo-linking').then(Linking => Linking.default.openURL(url)); }
+                    }}>
+                      <Ionicons name="logo-youtube" size={18} color="#FF0000" />
+                      <Text style={[styles.resourceItemText, { color: COLORS.lime }]}>Blue Box Air Training Video</Text>
+                      <Ionicons name="open-outline" size={16} color={COLORS.grayDark} />
+                    </TouchableOpacity>
                     <View style={styles.resourceItem}>
                       <Ionicons name="play-circle" size={18} color={COLORS.grayDark} />
                       <Text style={[styles.resourceItemText, { color: COLORS.grayDark }]}>Coil Cleaning Fundamentals</Text>

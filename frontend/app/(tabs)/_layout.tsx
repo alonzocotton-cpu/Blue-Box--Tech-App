@@ -10,6 +10,7 @@ const COLORS = {
   lime: '#c5d93d',
   white: '#ffffff',
   gray: '#64748b',
+  purple: '#8b5cf6',
 };
 
 export default function TabLayout() {
@@ -24,11 +25,29 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
+        name="home"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="projects"
         options={{
           title: 'Projects',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="folder" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'AI Chat',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubbles" size={size} color={color} />
           ),
         }}
       />

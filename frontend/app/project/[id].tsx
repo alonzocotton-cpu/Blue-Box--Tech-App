@@ -12,6 +12,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -641,6 +642,52 @@ export default function ProjectDetailScreen() {
             </View>
           )}
         </View>
+
+        {/* Primary Contact Card */}
+        {project.primary_contact && (
+          <View style={[styles.infoCard, { marginTop: 12 }]}>
+            <View style={styles.contactHeader}>
+              <Ionicons name="person-circle" size={20} color={COLORS.lime} />
+              <Text style={styles.contactHeaderText}>Primary Contact</Text>
+            </View>
+            <View style={styles.contactDetails}>
+              <Text style={styles.contactName}>{project.primary_contact.name}</Text>
+              <Text style={styles.contactTitle}>{project.primary_contact.title}</Text>
+              {project.primary_contact.email && (
+                <View style={styles.contactRow}>
+                  <Ionicons name="mail-outline" size={16} color={COLORS.gray} />
+                  <Text style={styles.contactInfo}>{project.primary_contact.email}</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.contactActions}>
+              <TouchableOpacity
+                style={styles.callButton}
+                onPress={() => {
+                  const phone = project.primary_contact.phone.replace(/[^\d+]/g, '');
+                  Linking.openURL(`tel:${phone}`).catch(() => {
+                    Alert.alert('Unable to Call', 'Phone calling is not available on this device.');
+                  });
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="call" size={20} color={COLORS.navy} />
+                <Text style={styles.callButtonText}>Call {project.primary_contact.name.split(' ')[0]}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.emailButton}
+                onPress={() => {
+                  Linking.openURL(`mailto:${project.primary_contact.email}`).catch(() => {
+                    Alert.alert('Unable to Email', 'Email is not available on this device.');
+                  });
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="mail" size={20} color={COLORS.lime} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Stats */}
         <View style={styles.statsRow}>
@@ -1278,6 +1325,73 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 20,
     gap: 12,
+  },
+  contactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  contactHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.lime,
+    letterSpacing: 0.5,
+  },
+  contactDetails: {
+    marginBottom: 14,
+  },
+  contactName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.white,
+    marginBottom: 2,
+  },
+  contactTitle: {
+    fontSize: 13,
+    color: COLORS.grayDark,
+    marginBottom: 8,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  contactInfo: {
+    fontSize: 14,
+    color: COLORS.gray,
+  },
+  contactActions: {
+    flexDirection: 'row',
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#2d4a6f',
+    paddingTop: 14,
+  },
+  callButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.lime,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  callButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.navy,
+  },
+  emailButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.lime,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statCard: {
     flex: 1,

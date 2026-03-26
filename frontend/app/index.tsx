@@ -95,7 +95,7 @@ export default function LoginScreen() {
         const savedTechnician = await AsyncStorage.getItem('technician');
         
         if (savedToken && savedTechnician) {
-          router.replace('/(tabs)/projects');
+          router.replace('/(tabs)/home');
         } else {
           // No saved session, do regular login
           Alert.alert('Info', 'Please login with your credentials first');
@@ -155,7 +155,7 @@ export default function LoginScreen() {
           await AsyncStorage.setItem('rememberMe', 'false');
         }
         
-        router.replace('/(tabs)/projects');
+        router.replace('/(tabs)/home');
       } else {
         Alert.alert('Login Failed', data.message || 'Invalid credentials');
       }
@@ -179,7 +179,7 @@ export default function LoginScreen() {
             <View style={styles.logoContainer}>
               <BlueBoxLogo size={110} />
             </View>
-            <Text style={styles.title}>Blue Box Air, Inc.</Text>
+            <Text style={styles.title}>Blue Box Air, Inc-</Text>
             <Text style={styles.tagline}>Coil Management Solutions</Text>
           </View>
 
