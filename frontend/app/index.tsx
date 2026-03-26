@@ -50,11 +50,24 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
+  const [autoLoginChecked, setAutoLoginChecked] = useState(false);
 
   useEffect(() => {
-    checkBiometricSupport();
-    loadSavedCredentials();
+    initializeLogin();
   }, []);
+
+  const initializeLogin = async () => {
+    await checkBiometricSupport();
+    await loadSavedCredentials();
+    setAutoLoginChecked(true);
+  };
+
+  // Try auto-login with Face ID when app opens (if credentials exist)
+  useEffect(() => {
+    if (autoLoginChecked && biometricAvailable && hasSavedCredentials) {
+      attemptAutoFaceID();
+    }
+  }, [autoLoginChecked, biometricAvailable, hasSavedCredentials]);
 
   const checkBiometricSupport = async () => {
     try {
@@ -68,25 +81,57 @@ export default function LoginScreen() {
 
   const loadSavedCredentials = async () => {
     try {
+      const savedToken = await AsyncStorage.getItem('authToken');
+      const savedTechnician = await AsyncStorage.getItem('technician');
+      const biometricEnabled = await AsyncStorage.getItem('biometricEnabled');
       const savedUsername = await AsyncStorage.getItem('savedUsername');
       const savedRememberMe = await AsyncStorage.getItem('rememberMe');
       
+      // Face ID is available if there's a saved session
+      if (savedToken && savedTechnician && biometricEnabled === 'true') {
+        setHasSavedCredentials(true);
+      }
+      
+      // Pre-fill username if Remember Me was checked
       if (savedUsername && savedRememberMe === 'true') {
         setUsername(savedUsername);
         setRememberMe(true);
-        setHasSavedCredentials(true);
       }
     } catch (error) {
       console.error('Load credentials error:', error);
     }
   };
 
+  const attemptAutoFaceID = async () => {
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Login to Blue Box Air',
+        fallbackLabel: 'Use Password',
+        cancelLabel: 'Cancel',
+        disableDeviceFallback: false,
+      });
+
+      if (result.success) {
+        const savedToken = await AsyncStorage.getItem('authToken');
+        const savedTechnician = await AsyncStorage.getItem('technician');
+        
+        if (savedToken && savedTechnician) {
+          router.replace('/(tabs)/home');
+        }
+      }
+    } catch (error) {
+      // Silently fail - user can still use password
+      console.log('Auto Face ID skipped:', error);
+    }
+  };
+
   const handleBiometricLogin = async () => {
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Login with Face ID',
+        promptMessage: 'Login to Blue Box Air',
         fallbackLabel: 'Use Password',
         cancelLabel: 'Cancel',
+        disableDeviceFallback: false,
       });
 
       if (result.success) {
@@ -145,6 +190,11 @@ export default function LoginScreen() {
       if (data.success) {
         await AsyncStorage.setItem('authToken', data.token);
         await AsyncStorage.setItem('technician', JSON.stringify(data.technician));
+        
+        // Always enable biometric login for next time
+        if (biometricAvailable) {
+          await AsyncStorage.setItem('biometricEnabled', 'true');
+        }
         
         // Save credentials if Remember Me is checked
         if (rememberMe) {
@@ -263,7 +313,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
 
               {/* Face ID / Touch ID */}
-              {biometricAvailable && hasSavedCredentials && (
+              {biometricAvailable && (
                 <TouchableOpacity 
                   style={styles.socialButton}
                   onPress={handleBiometricLogin}
@@ -274,7 +324,7 @@ export default function LoginScreen() {
                     color={COLORS.lime} 
                   />
                   <Text style={styles.socialButtonText}>
-                    {Platform.OS === 'ios' ? 'Face ID' : 'Touch ID'}
+                    {Platform.OS === 'ios' ? 'Face ID' : 'Biometric'}
                   </Text>
                 </TouchableOpacity>
               )}

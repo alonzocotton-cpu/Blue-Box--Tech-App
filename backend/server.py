@@ -818,12 +818,21 @@ async def get_dashboard_stats():
     """Get dashboard statistics"""
     projects = MOCK_DATA["projects"]
     
+    # Count unique equipment serviced (has readings)
+    unique_equipment = await db.readings.distinct("equipment_id")
+    units_serviced = len(unique_equipment)
+    
+    # Total readings count
+    total_readings = await db.readings.count_documents({})
+    
     stats = {
         "total_projects": len(projects),
         "active": len([p for p in projects if p["status"] == "Active"]),
         "on_hold": len([p for p in projects if p["status"] == "On Hold"]),
         "completed": len([p for p in projects if p["status"] == "Completed"]),
         "total_equipment": sum(p.get("equipment_count", 0) for p in projects),
+        "units_serviced": units_serviced,
+        "total_readings": total_readings,
     }
     
     return stats

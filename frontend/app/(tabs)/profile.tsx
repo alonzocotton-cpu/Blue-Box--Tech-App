@@ -64,9 +64,11 @@ export default function ProfileScreen() {
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [activeProfileTab, setActiveProfileTab] = useState<'profile' | 'resources'>('profile');
   const [expandedResource, setExpandedResource] = useState<string | null>(null);
+  const [serviceStats, setServiceStats] = useState({ units_serviced: 0, total_readings: 0 });
 
   useEffect(() => {
     loadProfile();
+    loadServiceStats();
   }, []);
 
   const loadProfile = async () => {
@@ -101,6 +103,19 @@ export default function ProfileScreen() {
           skills: data.skills || [],
         });
       }
+    }
+  };
+
+  const loadServiceStats = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/dashboard/stats`);
+      const data = await response.json();
+      setServiceStats({
+        units_serviced: data.units_serviced || 0,
+        total_readings: data.total_readings || 0,
+      });
+    } catch (error) {
+      console.error('Error loading service stats:', error);
     }
   };
 
@@ -586,6 +601,21 @@ export default function ProfileScreen() {
             )}
           </View>
 
+          {/* Service Stats Card */}
+          <View style={styles.serviceStatsCard}>
+            <View style={styles.serviceStatItem}>
+              <Ionicons name="build" size={24} color={COLORS.lime} />
+              <Text style={styles.serviceStatNumber}>{serviceStats.units_serviced}</Text>
+              <Text style={styles.serviceStatLabel}>Units Serviced</Text>
+            </View>
+            <View style={styles.serviceStatDivider} />
+            <View style={styles.serviceStatItem}>
+              <Ionicons name="analytics" size={24} color={COLORS.blue} />
+              <Text style={styles.serviceStatNumber}>{serviceStats.total_readings}</Text>
+              <Text style={styles.serviceStatLabel}>Total Readings</Text>
+            </View>
+          </View>
+
           {editing ? (
             /* Edit Mode */
             <View style={styles.editSection}>
@@ -931,6 +961,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.lime,
+  },
+  serviceStatsCard: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.navyLight,
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 8,
+    borderRadius: 16,
+    paddingVertical: 20,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  serviceStatItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  serviceStatNumber: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  serviceStatLabel: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '500',
+  },
+  serviceStatDivider: {
+    width: 1,
+    height: 50,
+    backgroundColor: '#2d4a6f',
+    alignSelf: 'center',
   },
   skillsEditContainer: {
     flexDirection: 'row',
