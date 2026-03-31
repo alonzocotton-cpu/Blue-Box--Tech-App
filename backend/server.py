@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, Body
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -440,16 +440,69 @@ async def get_projects(status: Optional[str] = None):
         if proj.get("end_date"):
             proj["end_date"] = proj["end_date"].isoformat() if isinstance(proj["end_date"], datetime) else proj["end_date"]
     
+    # Also get custom projects from DB
+    custom_projects = await db.custom_projects.find().to_list(100)
+    for cp in custom_projects:
+        cp["id"] = str(cp["_id"])
+        del cp["_id"]
+        projects.append(cp)
+    
     # Apply filters
     if status:
-        projects = [p for p in projects if p["status"] == status]
+        projects = [p for p in projects if p.get("status") == status]
     
     return {"projects": projects, "total": len(projects)}
+
+@api_router.post("/projects")
+async def create_project(data: dict = Body(...)):
+    """Create a new project manually"""
+    now = datetime.now()
+    project_id = f"proj-custom-{int(now.timestamp())}"
+    
+    new_project = {
+        "id": project_id,
+        "salesforce_id": None,
+        "project_number": f"PRJ-{now.strftime('%Y')}-{project_id[-4:]}",
+        "name": data.get("name", "Untitled Project"),
+        "description": data.get("description", ""),
+        "status": data.get("status", "Active"),
+        "client_name": data.get("client_name", ""),
+        "address": data.get("address", ""),
+        "start_date": data.get("start_date", now.isoformat()),
+        "end_date": data.get("end_date", (now + timedelta(days=30)).isoformat()),
+        "assigned_technician_id": "tech-001",
+        "equipment_count": 0,
+        "primary_contact": {
+            "name": data.get("contact_name", ""),
+            "title": data.get("contact_title", ""),
+            "phone": data.get("contact_phone", ""),
+            "email": data.get("contact_email", ""),
+        } if data.get("contact_name") else None,
+        "source": "manual",
+        "created_at": now.isoformat(),
+    }
+    
+    result = await db.custom_projects.insert_one(new_project.copy())
+    new_project["id"] = str(result.inserted_id)
+    
+    return {"success": True, "project": new_project}
 
 @api_router.get("/projects/{project_id}")
 async def get_project(project_id: str):
     """Get a specific project with all details"""
     project = next((p for p in MOCK_DATA["projects"] if p["id"] == project_id), None)
+    
+    # Also check custom projects in DB
+    if not project:
+        from bson import ObjectId
+        try:
+            custom = await db.custom_projects.find_one({"_id": ObjectId(project_id)})
+        except Exception:
+            custom = await db.custom_projects.find_one({"id": project_id})
+        if custom:
+            custom["id"] = str(custom["_id"])
+            del custom["_id"]
+            project = custom
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

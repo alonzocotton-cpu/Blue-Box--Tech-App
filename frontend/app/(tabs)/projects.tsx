@@ -8,6 +8,12 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
+  Modal,
+  TextInput,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -50,6 +56,18 @@ export default function ProjectsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('All');
   const [technician, setTechnician] = useState<any>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [newProject, setNewProject] = useState({
+    name: '',
+    client_name: '',
+    address: '',
+    description: '',
+    contact_name: '',
+    contact_title: '',
+    contact_phone: '',
+    contact_email: '',
+  });
 
   const fetchProjects = async () => {
     try {
@@ -86,6 +104,47 @@ export default function ProjectsScreen() {
     setRefreshing(true);
     fetchProjects();
   }, []);
+
+  const handleSaveProject = async () => {
+    if (!newProject.name.trim()) {
+      Alert.alert('Required', 'Project name is required');
+      return;
+    }
+    if (!newProject.client_name.trim()) {
+      Alert.alert('Required', 'Client name is required');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/api/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProject),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setShowAddModal(false);
+        setNewProject({
+          name: '',
+          client_name: '',
+          address: '',
+          description: '',
+          contact_name: '',
+          contact_title: '',
+          contact_phone: '',
+          contact_email: '',
+        });
+        fetchProjects();
+        Alert.alert('Success', 'Project created successfully!');
+      }
+    } catch (error) {
+      console.error('Error creating project:', error);
+      Alert.alert('Error', 'Failed to create project');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -160,9 +219,12 @@ export default function ProjectsScreen() {
               resizeMode="contain"
             />
             <Text style={styles.brandText}>BLUE BOX</Text>
-            <View style={styles.addButton}>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => setShowAddModal(true)}
+            >
               <Ionicons name="add" size={24} color={COLORS.lime} />
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
         <Text style={styles.welcomeText}>Welcome, {technician?.full_name || 'Technician'}</Text>
@@ -219,6 +281,136 @@ export default function ProjectsScreen() {
           </View>
         }
       />
+
+      {/* Add Project Modal */}
+      <Modal
+        visible={showAddModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAddModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          {/* Modal Header */}
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowAddModal(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>New Project</Text>
+            <TouchableOpacity onPress={handleSaveProject} disabled={saving}>
+              {saving ? (
+                <ActivityIndicator size="small" color={COLORS.lime} />
+              ) : (
+                <Text style={styles.modalSave}>Save</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView 
+            style={styles.modalScroll} 
+            contentContainerStyle={styles.modalScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Project Details Section */}
+            <Text style={styles.modalSectionTitle}>PROJECT DETAILS</Text>
+            <View style={styles.modalCard}>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Project Name *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newProject.name}
+                  onChangeText={(text) => setNewProject({ ...newProject, name: text })}
+                  placeholder="e.g., Acme Tower - Coil Cleaning"
+                  placeholderTextColor={COLORS.grayDark}
+                />
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Client Name *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newProject.client_name}
+                  onChangeText={(text) => setNewProject({ ...newProject, client_name: text })}
+                  placeholder="e.g., Acme Corporation"
+                  placeholderTextColor={COLORS.grayDark}
+                />
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Address</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newProject.address}
+                  onChangeText={(text) => setNewProject({ ...newProject, address: text })}
+                  placeholder="e.g., 123 Main St, City, State"
+                  placeholderTextColor={COLORS.grayDark}
+                />
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Description</Text>
+                <TextInput
+                  style={[styles.modalInput, styles.modalTextArea]}
+                  value={newProject.description}
+                  onChangeText={(text) => setNewProject({ ...newProject, description: text })}
+                  placeholder="Brief description of the project scope..."
+                  placeholderTextColor={COLORS.grayDark}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
+
+            {/* Primary Contact Section */}
+            <Text style={styles.modalSectionTitle}>PRIMARY CONTACT (Optional)</Text>
+            <View style={styles.modalCard}>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Contact Name</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newProject.contact_name}
+                  onChangeText={(text) => setNewProject({ ...newProject, contact_name: text })}
+                  placeholder="e.g., James Wilson"
+                  placeholderTextColor={COLORS.grayDark}
+                />
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Title</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newProject.contact_title}
+                  onChangeText={(text) => setNewProject({ ...newProject, contact_title: text })}
+                  placeholder="e.g., Facilities Manager"
+                  placeholderTextColor={COLORS.grayDark}
+                />
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Phone</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newProject.contact_phone}
+                  onChangeText={(text) => setNewProject({ ...newProject, contact_phone: text })}
+                  placeholder="e.g., (555) 123-4567"
+                  placeholderTextColor={COLORS.grayDark}
+                  keyboardType="phone-pad"
+                />
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Email</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newProject.contact_email}
+                  onChangeText={(text) => setNewProject({ ...newProject, contact_email: text })}
+                  placeholder="e.g., contact@company.com"
+                  placeholderTextColor={COLORS.grayDark}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -410,5 +602,80 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.grayDark,
     marginTop: 12,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: COLORS.navy,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: COLORS.navyLight,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2d4a6f',
+  },
+  modalCancel: {
+    fontSize: 16,
+    color: COLORS.gray,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  modalSave: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.lime,
+  },
+  modalScroll: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  modalSectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.gray,
+    letterSpacing: 1,
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  modalCard: {
+    backgroundColor: COLORS.navyLight,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  modalField: {
+    marginBottom: 16,
+  },
+  modalLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.lime,
+    marginBottom: 8,
+  },
+  modalInput: {
+    backgroundColor: COLORS.navy,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  modalTextArea: {
+    minHeight: 80,
+    paddingTop: 14,
   },
 });
