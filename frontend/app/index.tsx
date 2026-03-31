@@ -156,7 +156,9 @@ export default function LoginScreen() {
     // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
     try {
       // For native app, we'll use a deep link scheme
-      const redirectUrl = 'fieldtechconnect://auth/callback';
+      const redirectUrl = Platform.OS === 'web' 
+        ? `${window.location.origin}/auth/callback` 
+        : 'fieldtechconnect://auth/callback';
       const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
       
       const supported = await Linking.canOpenURL(authUrl);
