@@ -10,7 +10,6 @@
     "newArchEnabled": true,
     "owner": "blueboxair",
     "description": "Blue Box Air, Inc. Technician App — Coil management, equipment service readings, project reports, and team collaboration for field technicians.",
-    "githubUrl": "",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.blueboxair.techapp",
