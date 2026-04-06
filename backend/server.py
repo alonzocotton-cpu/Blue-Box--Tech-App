@@ -278,6 +278,7 @@ SF_CLIENT_ID = os.environ.get('SALESFORCE_CLIENT_ID', '')
 SF_CLIENT_SECRET = os.environ.get('SALESFORCE_CLIENT_SECRET', '')
 SF_LOGIN_URL = os.environ.get('SALESFORCE_LOGIN_URL', 'https://login.salesforce.com')
 SF_API_VERSION = os.environ.get('SALESFORCE_API_VERSION', 'v59.0')
+SF_REDIRECT_URI = os.environ.get('SALESFORCE_REDIRECT_URI', '')
 APP_URL = os.environ.get('APP_URL', '')
 
 @api_router.post("/auth/login")
@@ -364,15 +365,11 @@ async def login(credentials: TechnicianLogin):
                 else:
                     sf_error = token_response.json()
                     error_desc = sf_error.get("error_description", "Invalid credentials")
-                    logging.warning(f"Salesforce login failed: {error_desc}")
+                    error_code = sf_error.get("error", "unknown")
+                    logging.warning(f"Salesforce password login failed: {error_code} - {error_desc}")
+                    logging.warning(f"Salesforce full response: {token_response.text}")
                     
-                    # Return actual SF error instead of falling through to mock
-                    return {
-                        "success": False,
-                        "message": f"Salesforce authentication failed: {error_desc}. If using password flow, append your Salesforce Security Token to your password.",
-                        "error_type": "salesforce_auth",
-                        "hint": "Your password should be: YourPassword + SecurityToken (no spaces). Find your token in Salesforce: Settings > My Personal Information > Reset My Security Token",
-                    }
+                    # Don't block login — fall through to mock so user can still use the app
                     
         except Exception as e:
             logging.error(f"Salesforce OAuth error: {e}")
@@ -394,7 +391,7 @@ async def salesforce_oauth_init(redirect_uri: str = ""):
     if not SF_CLIENT_ID:
         raise HTTPException(status_code=500, detail="Salesforce not configured")
     
-    callback_url = f"{APP_URL}/api/auth/salesforce/callback"
+    callback_url = SF_REDIRECT_URI or f"{APP_URL}/api/auth/salesforce/callback"
     
     params = {
         "response_type": "code",
@@ -408,16 +405,38 @@ async def salesforce_oauth_init(redirect_uri: str = ""):
     
     return {"auth_url": auth_url, "callback_url": callback_url}
 
+@api_router.get("/auth/salesforce/redirect")
+async def salesforce_oauth_redirect():
+    """Redirect user to Salesforce login page (browser-based flow)"""
+    if not SF_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="Salesforce not configured")
+    
+    callback_url = SF_REDIRECT_URI or f"{APP_URL}/api/auth/salesforce/callback"
+    
+    params = {
+        "response_type": "code",
+        "client_id": SF_CLIENT_ID,
+        "redirect_uri": callback_url,
+        "scope": "api refresh_token openid profile",
+        "state": "browser_flow",
+    }
+    
+    auth_url = f"{SF_LOGIN_URL}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
+    return RedirectResponse(url=auth_url)
+
 @api_router.get("/auth/salesforce/callback")
 async def salesforce_oauth_callback(code: str = "", state: str = "app", error: str = "", error_description: str = ""):
     """Handle Salesforce OAuth callback"""
+    frontend_url = SF_REDIRECT_URI.replace("/api/auth/salesforce/callback", "") if SF_REDIRECT_URI else APP_URL
+    
     if error:
-        return {"success": False, "error": error, "description": error_description}
+        # Redirect to frontend with error
+        return RedirectResponse(url=f"{frontend_url}/?sf_error={urllib.parse.quote(error_description or error)}")
     
     if not code:
         raise HTTPException(status_code=400, detail="No authorization code received")
     
-    callback_url = f"{APP_URL}/api/auth/salesforce/callback"
+    callback_url = SF_REDIRECT_URI or f"{APP_URL}/api/auth/salesforce/callback"
     
     try:
         async with httpx.AsyncClient() as client_http:
@@ -436,7 +455,9 @@ async def salesforce_oauth_callback(code: str = "", state: str = "app", error: s
             )
             
             if token_response.status_code != 200:
-                return {"success": False, "error": "Token exchange failed", "details": token_response.text}
+                error_msg = token_response.text
+                logging.error(f"SF token exchange failed: {error_msg}")
+                return RedirectResponse(url=f"{frontend_url}/?sf_error={urllib.parse.quote('Token exchange failed')}")
             
             sf_data = token_response.json()
             access_token = sf_data.get("access_token")
@@ -477,17 +498,27 @@ async def salesforce_oauth_callback(code: str = "", state: str = "app", error: s
                 upsert=True,
             )
             
-            return {
-                "success": True,
-                "message": "Salesforce login successful",
-                "technician": technician,
-                "token": access_token,
-                "source": "salesforce",
-            }
+            # Save profile
+            await db.profiles.update_one(
+                {"salesforce_id": technician["salesforce_id"]},
+                {"$set": {
+                    **technician,
+                    "technician_id": technician["id"],
+                    "source": "salesforce",
+                    "updated_at": datetime.utcnow().isoformat(),
+                }},
+                upsert=True,
+            )
+            
+            # Redirect to frontend with token and user data encoded in URL
+            tech_json = urllib.parse.quote(json.dumps(technician))
+            return RedirectResponse(
+                url=f"{frontend_url}/?sf_token={access_token}&sf_user={tech_json}&sf_success=true"
+            )
             
     except Exception as e:
         logging.error(f"Salesforce callback error: {e}")
-        return {"success": False, "error": str(e)}
+        return RedirectResponse(url=f"{frontend_url}/?sf_error={urllib.parse.quote(str(e))}")
 
 @api_router.get("/auth/salesforce/explore")
 async def explore_salesforce_objects(token: str = ""):

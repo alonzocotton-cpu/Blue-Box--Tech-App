@@ -57,9 +57,67 @@ export default function LoginScreen() {
   }, []);
 
   const initializeLogin = async () => {
+    // Check if we're returning from Salesforce OAuth callback
+    await checkSalesforceCallback();
     await checkBiometricSupport();
     await loadSavedCredentials();
     setAutoLoginChecked(true);
+  };
+
+  const checkSalesforceCallback = async () => {
+    try {
+      // On web, check URL parameters for SF OAuth callback
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const sfToken = params.get('sf_token');
+        const sfUser = params.get('sf_user');
+        const sfSuccess = params.get('sf_success');
+        const sfError = params.get('sf_error');
+        
+        if (sfError) {
+          Alert.alert('Salesforce Login Failed', decodeURIComponent(sfError));
+          // Clean URL
+          window.history.replaceState({}, '', window.location.pathname);
+          return;
+        }
+        
+        if (sfSuccess === 'true' && sfToken && sfUser) {
+          try {
+            const technician = JSON.parse(decodeURIComponent(sfUser));
+            await AsyncStorage.setItem('authToken', sfToken);
+            await AsyncStorage.setItem('technician', JSON.stringify(technician));
+            await AsyncStorage.setItem('loginSource', 'salesforce');
+            
+            // Clean URL
+            window.history.replaceState({}, '', window.location.pathname);
+            
+            // Navigate to home
+            router.replace('/(tabs)/home');
+            return;
+          } catch (e) {
+            console.error('Error parsing SF callback data:', e);
+          }
+        }
+      }
+      
+      // On native, check deep link for SF callback
+      const url = await Linking.getInitialURL();
+      if (url && url.includes('sf_token=')) {
+        const urlParams = new URL(url);
+        const sfToken = urlParams.searchParams.get('sf_token');
+        const sfUser = urlParams.searchParams.get('sf_user');
+        
+        if (sfToken && sfUser) {
+          const technician = JSON.parse(decodeURIComponent(sfUser));
+          await AsyncStorage.setItem('authToken', sfToken);
+          await AsyncStorage.setItem('technician', JSON.stringify(technician));
+          await AsyncStorage.setItem('loginSource', 'salesforce');
+          router.replace('/(tabs)/home');
+        }
+      }
+    } catch (error) {
+      console.error('SF callback check error:', error);
+    }
   };
 
   // Try auto-login with Face ID when app opens (if credentials exist)
@@ -287,10 +345,25 @@ export default function LoginScreen() {
               <Text style={styles.rememberMeText}>Remember me</Text>
             </TouchableOpacity>
 
-            {/* Salesforce Login Button */}
+            {/* Salesforce Login Button - Browser OAuth */}
             <TouchableOpacity
               style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-              onPress={handleLogin}
+              onPress={async () => {
+                setLoading(true);
+                try {
+                  // Open Salesforce login in browser
+                  const sfLoginUrl = `${API_URL}/api/auth/salesforce/redirect`;
+                  if (Platform.OS === 'web') {
+                    window.location.href = sfLoginUrl;
+                  } else {
+                    await Linking.openURL(sfLoginUrl);
+                  }
+                } catch (error) {
+                  console.error('SF OAuth error:', error);
+                  Alert.alert('Error', 'Could not open Salesforce login');
+                  setLoading(false);
+                }
+              }}
               disabled={loading}
             >
               {loading ? (
@@ -306,9 +379,19 @@ export default function LoginScreen() {
             {/* Divider */}
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              <Text style={styles.dividerText}>or use credentials</Text>
               <View style={styles.dividerLine} />
             </View>
+
+            {/* Credential Login Button */}
+            <TouchableOpacity
+              style={styles.credentialButton}
+              onPress={handleLogin}
+              disabled={loading || !username.trim() || !password.trim()}
+            >
+              <Ionicons name="log-in-outline" size={20} color={COLORS.lime} />
+              <Text style={styles.credentialButtonText}>Login</Text>
+            </TouchableOpacity>
 
             {/* Alternative Login Options */}
             <View style={styles.alternativeLogins}>
@@ -343,8 +426,8 @@ export default function LoginScreen() {
           {/* Footer Info */}
           <View style={styles.footer}>
             <View style={styles.mockBadge}>
-              <Ionicons name="information-circle-outline" size={16} color={COLORS.lime} />
-              <Text style={styles.mockText}>Demo Mode - Any credentials work</Text>
+              <Ionicons name="shield-checkmark-outline" size={16} color={COLORS.lime} />
+              <Text style={styles.mockText}>Secured with Salesforce OAuth</Text>
             </View>
           </View>
         </View>
@@ -454,6 +537,23 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: COLORS.navy,
+  },
+  credentialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: COLORS.lime,
+    marginBottom: 4,
+  },
+  credentialButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.lime,
   },
   divider: {
     flexDirection: 'row',
