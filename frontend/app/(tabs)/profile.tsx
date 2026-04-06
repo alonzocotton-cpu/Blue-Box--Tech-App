@@ -73,23 +73,46 @@ export default function ProfileScreen() {
 
   const loadProfile = async () => {
     try {
-      // Try API first
-      const response = await fetch(`${API_URL}/api/auth/profile`);
-      const data = await response.json();
+      // First load from AsyncStorage (most up-to-date from login)
+      const stored = await AsyncStorage.getItem('technician');
+      const token = await AsyncStorage.getItem('authToken');
+      let localData = stored ? JSON.parse(stored) : null;
+      
+      // Then try API to get merged/updated data
+      const profileUrl = token 
+        ? `${API_URL}/api/auth/profile?token=${encodeURIComponent(token)}`
+        : `${API_URL}/api/auth/profile`;
+      const response = await fetch(profileUrl);
+      const apiData = await response.json();
+      
+      // Merge: prefer API data but fill gaps with local data
+      const data = {
+        ...(localData || {}),
+        ...apiData,
+        // Preserve SF-sourced fields if they exist in local data
+        full_name: apiData.full_name || localData?.full_name || '',
+        email: apiData.email || localData?.email || '',
+        phone: apiData.phone || localData?.phone || '',
+        title: apiData.title || localData?.title || 'Technician',
+        company: apiData.company || localData?.company || 'Blue Box Air, Inc.',
+        skills: apiData.skills?.length ? apiData.skills : (localData?.skills || []),
+        profile_photo: apiData.profile_photo || localData?.profile_photo || '',
+      };
+      
       setTechnician(data);
       setEditForm({
-        full_name: data.full_name || '',
-        email: data.email || '',
-        phone: data.phone || '',
-        title: data.title || 'Technician',
-        company: data.company || 'Blue Box Air, Inc.',
-        skills: data.skills || [],
+        full_name: data.full_name,
+        email: data.email,
+        phone: data.phone,
+        title: data.title,
+        company: data.company,
+        skills: data.skills,
       });
       if (data.profile_photo) {
         setProfilePhoto(data.profile_photo);
       }
     } catch (error) {
-      // Fallback to AsyncStorage
+      // Fallback to AsyncStorage only
       const stored = await AsyncStorage.getItem('technician');
       if (stored) {
         const data = JSON.parse(stored);

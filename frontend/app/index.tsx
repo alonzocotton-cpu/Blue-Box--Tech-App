@@ -210,7 +210,13 @@ export default function LoginScreen() {
         
         router.replace('/(tabs)/home');
       } else {
-        Alert.alert('Login Failed', data.message || 'Invalid Salesforce credentials. Please check your username and password.');
+        // Show detailed error with hint for Salesforce auth issues
+        const errorMsg = data.message || 'Invalid credentials';
+        const hint = data.hint || '';
+        Alert.alert(
+          'Login Failed', 
+          hint ? `${errorMsg}\n\n${hint}` : errorMsg
+        );
       }
     } catch (error) {
       console.error('Login error:', error);

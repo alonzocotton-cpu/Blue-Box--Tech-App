@@ -342,6 +342,18 @@ async def login(credentials: TechnicianLogin):
                         upsert=True,
                     )
                     
+                    # Also save/update the technician profile in DB
+                    await db.profiles.update_one(
+                        {"salesforce_id": technician["salesforce_id"]},
+                        {"$set": {
+                            **technician,
+                            "technician_id": technician["id"],
+                            "source": "salesforce",
+                            "updated_at": datetime.utcnow().isoformat(),
+                        }},
+                        upsert=True,
+                    )
+                    
                     return {
                         "success": True,
                         "message": "Salesforce login successful",
@@ -354,7 +366,13 @@ async def login(credentials: TechnicianLogin):
                     error_desc = sf_error.get("error_description", "Invalid credentials")
                     logging.warning(f"Salesforce login failed: {error_desc}")
                     
-                    # Fall through to mock login
+                    # Return actual SF error instead of falling through to mock
+                    return {
+                        "success": False,
+                        "message": f"Salesforce authentication failed: {error_desc}. If using password flow, append your Salesforce Security Token to your password.",
+                        "error_type": "salesforce_auth",
+                        "hint": "Your password should be: YourPassword + SecurityToken (no spaces). Find your token in Salesforce: Settings > My Personal Information > Reset My Security Token",
+                    }
                     
         except Exception as e:
             logging.error(f"Salesforce OAuth error: {e}")
@@ -516,9 +534,17 @@ async def explore_salesforce_objects(token: str = ""):
         return {"success": False, "error": str(e)}
 
 @api_router.get("/auth/profile")
-async def get_profile():
+async def get_profile(token: str = ""):
     """Get current technician profile"""
-    # Try to get profile from DB first, fallback to mock
+    # Try to get profile from DB by SF data first
+    if token:
+        session = await db.sf_sessions.find_one({"access_token": token})
+        if session:
+            profile = await db.profiles.find_one({"salesforce_id": session.get("user_id", "")})
+            if profile:
+                return serialize_doc(profile)
+    
+    # Try to get profile from DB by technician_id
     profile = await db.profiles.find_one({"technician_id": MOCK_DATA["technician"]["id"]})
     if profile:
         profile = serialize_doc(profile)
