@@ -1055,10 +1055,22 @@ provide general HVAC/coil management guidance and note that the technician shoul
 
 @api_router.get("/reports/{project_id}")
 async def generate_report(project_id: str):
-    """Generate a project report with equipment readings comparison and photos link.
-    This will integrate with Salesforce API in production to pull live data."""
+    """Generate a project report with equipment readings comparison and photos link."""
     
     project = next((p for p in MOCK_DATA["projects"] if p["id"] == project_id), None)
+    
+    # Also check custom projects in DB
+    if not project:
+        from bson import ObjectId
+        try:
+            custom = await db.custom_projects.find_one({"_id": ObjectId(project_id)})
+        except Exception:
+            custom = await db.custom_projects.find_one({"id": project_id})
+        if custom:
+            custom["id"] = str(custom["_id"])
+            del custom["_id"]
+            project = custom
+    
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -1069,8 +1081,15 @@ async def generate_report(project_id: str):
     if project.get("end_date"):
         project["end_date"] = project["end_date"].isoformat() if isinstance(project["end_date"], datetime) else project["end_date"]
     
-    # Get equipment
+    # Get equipment - check both mock and custom
     equipment_list = [eq for eq in MOCK_DATA["equipment"] if eq["project_id"] == project_id]
+    
+    # Also check DB for custom equipment
+    custom_equipment = await db.equipment.find({"project_id": project_id}).to_list(100)
+    for ce in custom_equipment:
+        ce["id"] = str(ce["_id"])
+        del ce["_id"]
+        equipment_list.append(ce)
     
     # Get all readings for this project
     all_readings = await db.readings.find({"project_id": project_id}).to_list(500)
@@ -1137,11 +1156,12 @@ async def generate_report(project_id: str):
     
     # Build report
     report = {
-        "report_id": f"RPT-{project_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        "report_id": f"RPT-{project_id[-8:]}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
         "generated_at": datetime.utcnow().isoformat(),
         "salesforce_sync_status": get_salesforce_status(),
         "project": project,
         "technician": MOCK_DATA["technician"],
+        "primary_contact": project.get("primary_contact"),
         "summary": {
             "total_equipment": len(equipment_list),
             "equipment_with_readings": len([er for er in equipment_reports if er["has_data"]]),

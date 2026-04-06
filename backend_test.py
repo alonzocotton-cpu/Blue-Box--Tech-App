@@ -1,389 +1,254 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Blue Box Air Salesforce OAuth Integration
-Tests all the endpoints specified in the review request.
+Backend API Testing for Blue Box Air App - Reports Endpoint Focus
+Testing the project reports endpoint as requested in the review.
 """
 
-import asyncio
-import httpx
+import requests
 import json
-import os
+import sys
 from datetime import datetime
 
 # Backend URL from frontend .env
-BACKEND_URL = "https://techservice-app-2.preview.emergentagent.com/api"
+BACKEND_URL = "https://techservice-app-2.preview.emergentagent.com"
+API_BASE = f"{BACKEND_URL}/api"
 
-class SalesforceOAuthTester:
-    def __init__(self):
-        self.client = httpx.AsyncClient(timeout=30.0)
-        self.results = []
-        
-    async def close(self):
-        await self.client.aclose()
+def test_endpoint(method, endpoint, data=None, expected_status=200, description=""):
+    """Test an API endpoint and return the response"""
+    url = f"{API_BASE}{endpoint}"
+    print(f"\n🧪 Testing {method} {endpoint}")
+    if description:
+        print(f"   Description: {description}")
     
-    def log_result(self, test_name, success, details, expected=None, actual=None):
-        """Log test result with details"""
-        result = {
-            "test": test_name,
-            "success": success,
-            "details": details,
-            "timestamp": datetime.now().isoformat()
-        }
-        if expected:
-            result["expected"] = expected
-        if actual:
-            result["actual"] = actual
-        self.results.append(result)
-        
-        status = "✅ PASS" if success else "❌ FAIL"
-        print(f"{status} {test_name}: {details}")
-        if not success and expected and actual:
-            print(f"    Expected: {expected}")
-            print(f"    Actual: {actual}")
-    
-    async def test_mock_login_fallback(self):
-        """Test 1: POST /api/auth/login with test credentials - should fall through to mock"""
-        try:
-            response = await self.client.post(
-                f"{BACKEND_URL}/auth/login",
-                json={"username": "test", "password": "test"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                expected_source = "mock"
-                actual_source = data.get("source")
-                expected_success = True
-                actual_success = data.get("success")
-                
-                if actual_success == expected_success and actual_source == expected_source:
-                    self.log_result(
-                        "Mock Login Fallback",
-                        True,
-                        f"Mock login working correctly - success={actual_success}, source={actual_source}"
-                    )
-                    return True
-                else:
-                    self.log_result(
-                        "Mock Login Fallback",
-                        False,
-                        "Response format incorrect",
-                        f"success=true, source=mock",
-                        f"success={actual_success}, source={actual_source}"
-                    )
-                    return False
-            else:
-                self.log_result(
-                    "Mock Login Fallback",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}"
-                )
-                return False
-                
-        except Exception as e:
-            self.log_result("Mock Login Fallback", False, f"Exception: {str(e)}")
-            return False
-    
-    async def test_salesforce_oauth_init(self):
-        """Test 2: GET /api/auth/salesforce/init - should return auth_url with login.salesforce.com"""
-        try:
-            response = await self.client.get(f"{BACKEND_URL}/auth/salesforce/init")
-            
-            if response.status_code == 200:
-                data = response.json()
-                auth_url = data.get("auth_url", "")
-                
-                # Check if auth_url contains required components
-                required_components = [
-                    "login.salesforce.com/services/oauth2/authorize",
-                    "client_id"
-                ]
-                
-                missing_components = [comp for comp in required_components if comp not in auth_url]
-                
-                if not missing_components:
-                    self.log_result(
-                        "Salesforce OAuth Init",
-                        True,
-                        f"Auth URL contains required components: {auth_url[:100]}..."
-                    )
-                    return True
-                else:
-                    self.log_result(
-                        "Salesforce OAuth Init",
-                        False,
-                        f"Auth URL missing components: {missing_components}",
-                        "URL with login.salesforce.com/services/oauth2/authorize and client_id",
-                        auth_url
-                    )
-                    return False
-            else:
-                self.log_result(
-                    "Salesforce OAuth Init",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}"
-                )
-                return False
-                
-        except Exception as e:
-            self.log_result("Salesforce OAuth Init", False, f"Exception: {str(e)}")
-            return False
-    
-    async def test_salesforce_callback_with_error(self):
-        """Test 3: GET /api/auth/salesforce/callback with error parameters"""
-        try:
-            response = await self.client.get(
-                f"{BACKEND_URL}/auth/salesforce/callback",
-                params={
-                    "error": "access_denied",
-                    "error_description": "test"
-                }
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                expected_success = False
-                expected_error = "access_denied"
-                actual_success = data.get("success")
-                actual_error = data.get("error")
-                
-                if actual_success == expected_success and actual_error == expected_error:
-                    self.log_result(
-                        "Salesforce Callback Error Handling",
-                        True,
-                        f"Error handling working correctly - success={actual_success}, error={actual_error}"
-                    )
-                    return True
-                else:
-                    self.log_result(
-                        "Salesforce Callback Error Handling",
-                        False,
-                        "Error response format incorrect",
-                        f"success=false, error=access_denied",
-                        f"success={actual_success}, error={actual_error}"
-                    )
-                    return False
-            else:
-                self.log_result(
-                    "Salesforce Callback Error Handling",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}"
-                )
-                return False
-                
-        except Exception as e:
-            self.log_result("Salesforce Callback Error Handling", False, f"Exception: {str(e)}")
-            return False
-    
-    async def test_salesforce_callback_no_code(self):
-        """Test 4: GET /api/auth/salesforce/callback without code parameter - should return 400"""
-        try:
-            response = await self.client.get(f"{BACKEND_URL}/auth/salesforce/callback")
-            
-            expected_status = 400
-            actual_status = response.status_code
-            
-            if actual_status == expected_status:
-                self.log_result(
-                    "Salesforce Callback No Code",
-                    True,
-                    f"Correctly returns 400 error when no code provided"
-                )
-                return True
-            else:
-                self.log_result(
-                    "Salesforce Callback No Code",
-                    False,
-                    "Wrong status code",
-                    f"HTTP 400",
-                    f"HTTP {actual_status}"
-                )
-                return False
-                
-        except Exception as e:
-            self.log_result("Salesforce Callback No Code", False, f"Exception: {str(e)}")
-            return False
-    
-    async def test_projects_endpoint(self):
-        """Test 5: GET /api/projects - should return 3 mock projects + any custom projects"""
-        try:
-            response = await self.client.get(f"{BACKEND_URL}/projects")
-            
-            if response.status_code == 200:
-                data = response.json()
-                projects = data.get("projects", [])
-                total = data.get("total", 0)
-                
-                # Should have at least 3 mock projects
-                if len(projects) >= 3 and total >= 3:
-                    # Check if projects have required fields
-                    required_fields = ["id", "name", "client_name", "status"]
-                    first_project = projects[0] if projects else {}
-                    missing_fields = [field for field in required_fields if field not in first_project]
-                    
-                    if not missing_fields:
-                        self.log_result(
-                            "Projects Endpoint",
-                            True,
-                            f"Returns {len(projects)} projects with required fields"
-                        )
-                        return True
-                    else:
-                        self.log_result(
-                            "Projects Endpoint",
-                            False,
-                            f"Projects missing required fields: {missing_fields}"
-                        )
-                        return False
-                else:
-                    self.log_result(
-                        "Projects Endpoint",
-                        False,
-                        f"Expected at least 3 projects, got {len(projects)}"
-                    )
-                    return False
-            else:
-                self.log_result(
-                    "Projects Endpoint",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}"
-                )
-                return False
-                
-        except Exception as e:
-            self.log_result("Projects Endpoint", False, f"Exception: {str(e)}")
-            return False
-    
-    async def test_create_project(self):
-        """Test 6: POST /api/projects - should create a new project"""
-        try:
-            project_data = {
-                "name": "Test Project",
-                "client_name": "Test Client"
-            }
-            
-            response = await self.client.post(
-                f"{BACKEND_URL}/projects",
-                json=project_data
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                success = data.get("success")
-                project = data.get("project", {})
-                
-                if success and project.get("name") == "Test Project":
-                    self.log_result(
-                        "Create Project",
-                        True,
-                        f"Successfully created project: {project.get('name')} for {project.get('client_name')}"
-                    )
-                    return True
-                else:
-                    self.log_result(
-                        "Create Project",
-                        False,
-                        "Project creation response format incorrect",
-                        "success=true with project data",
-                        f"success={success}, project={project}"
-                    )
-                    return False
-            else:
-                self.log_result(
-                    "Create Project",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}"
-                )
-                return False
-                
-        except Exception as e:
-            self.log_result("Create Project", False, f"Exception: {str(e)}")
-            return False
-    
-    async def test_dashboard_stats(self):
-        """Test 7: GET /api/dashboard/stats - should return stats with units_serviced field"""
-        try:
-            response = await self.client.get(f"{BACKEND_URL}/dashboard/stats")
-            
-            if response.status_code == 200:
-                data = response.json()
-                required_fields = ["total_projects", "active", "total_equipment", "units_serviced"]
-                missing_fields = [field for field in required_fields if field not in data]
-                
-                if not missing_fields:
-                    self.log_result(
-                        "Dashboard Stats",
-                        True,
-                        f"Returns all required fields: total_projects={data.get('total_projects')}, units_serviced={data.get('units_serviced')}"
-                    )
-                    return True
-                else:
-                    self.log_result(
-                        "Dashboard Stats",
-                        False,
-                        f"Missing required fields: {missing_fields}",
-                        f"Fields: {required_fields}",
-                        f"Available: {list(data.keys())}"
-                    )
-                    return False
-            else:
-                self.log_result(
-                    "Dashboard Stats",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}"
-                )
-                return False
-                
-        except Exception as e:
-            self.log_result("Dashboard Stats", False, f"Exception: {str(e)}")
-            return False
-    
-    async def run_all_tests(self):
-        """Run all Salesforce OAuth integration tests"""
-        print("🚀 Starting Salesforce OAuth Integration Tests for Blue Box Air")
-        print(f"Backend URL: {BACKEND_URL}")
-        print("=" * 80)
-        
-        tests = [
-            self.test_mock_login_fallback,
-            self.test_salesforce_oauth_init,
-            self.test_salesforce_callback_with_error,
-            self.test_salesforce_callback_no_code,
-            self.test_projects_endpoint,
-            self.test_create_project,
-            self.test_dashboard_stats
-        ]
-        
-        passed = 0
-        total = len(tests)
-        
-        for test in tests:
-            try:
-                result = await test()
-                if result:
-                    passed += 1
-            except Exception as e:
-                print(f"❌ FAIL {test.__name__}: Unexpected error - {str(e)}")
-        
-        print("=" * 80)
-        print(f"📊 Test Results: {passed}/{total} tests passed")
-        
-        if passed == total:
-            print("🎉 All Salesforce OAuth integration tests PASSED!")
-        else:
-            print(f"⚠️  {total - passed} test(s) FAILED - see details above")
-        
-        return passed == total
-
-async def main():
-    """Main test runner"""
-    tester = SalesforceOAuthTester()
     try:
-        success = await tester.run_all_tests()
-        return success
-    finally:
-        await tester.close()
+        if method == "GET":
+            response = requests.get(url, timeout=30)
+        elif method == "POST":
+            response = requests.post(url, json=data, timeout=30)
+        elif method == "PUT":
+            response = requests.put(url, json=data, timeout=30)
+        elif method == "DELETE":
+            response = requests.delete(url, timeout=30)
+        else:
+            print(f"❌ Unsupported method: {method}")
+            return None
+            
+        print(f"   Status: {response.status_code}")
+        
+        if response.status_code == expected_status:
+            print(f"   ✅ Expected status {expected_status}")
+        else:
+            print(f"   ❌ Expected {expected_status}, got {response.status_code}")
+            
+        # Try to parse JSON response
+        try:
+            json_response = response.json()
+            print(f"   Response size: {len(str(json_response))} chars")
+            return json_response
+        except:
+            print(f"   Response (text): {response.text[:200]}...")
+            return response.text
+            
+    except requests.exceptions.RequestException as e:
+        print(f"   ❌ Request failed: {e}")
+        return None
+
+def main():
+    """Run the backend API tests focusing on reports endpoints"""
+    print("=" * 80)
+    print("🔬 BLUE BOX AIR - BACKEND API TESTING")
+    print("Focus: Project Reports Endpoint Testing")
+    print("=" * 80)
+    
+    # Test results tracking
+    tests_passed = 0
+    tests_failed = 0
+    
+    # Test 1: GET /api/reports/proj-001 - Should return report with James Wilson contact
+    print("\n" + "="*50)
+    print("TEST 1: GET /api/reports/proj-001")
+    print("="*50)
+    
+    response = test_endpoint("GET", "/reports/proj-001", 
+                           description="Should return report with project details, primary_contact (James Wilson), equipment_reports array, summary stats")
+    
+    if response and isinstance(response, dict):
+        # Check for required fields
+        required_fields = ["project", "primary_contact", "equipment_reports", "summary"]
+        missing_fields = [field for field in required_fields if field not in response]
+        
+        if not missing_fields:
+            print("   ✅ All required fields present")
+            
+            # Check primary_contact details
+            primary_contact = response.get("primary_contact", {})
+            if primary_contact and primary_contact.get("name") == "James Wilson":
+                print(f"   ✅ Primary contact is James Wilson")
+                print(f"   📞 Phone: {primary_contact.get('phone', 'N/A')}")
+                print(f"   📧 Email: {primary_contact.get('email', 'N/A')}")
+                tests_passed += 1
+            else:
+                print(f"   ❌ Primary contact issue. Expected James Wilson, got: {primary_contact.get('name', 'None')}")
+                tests_failed += 1
+                
+            # Check equipment_reports array
+            equipment_reports = response.get("equipment_reports", [])
+            print(f"   📊 Equipment reports count: {len(equipment_reports)}")
+            
+            # Check summary stats
+            summary = response.get("summary", {})
+            print(f"   📈 Summary stats: {summary}")
+            
+        else:
+            print(f"   ❌ Missing required fields: {missing_fields}")
+            tests_failed += 1
+    else:
+        print("   ❌ Invalid response format")
+        tests_failed += 1
+    
+    # Test 2: GET /api/reports/proj-002 - Should return Metro Hospital project with Dr. Sarah Mitchell
+    print("\n" + "="*50)
+    print("TEST 2: GET /api/reports/proj-002")
+    print("="*50)
+    
+    response = test_endpoint("GET", "/reports/proj-002",
+                           description="Should return report for Metro Hospital project with primary_contact (Dr. Sarah Mitchell)")
+    
+    if response and isinstance(response, dict):
+        primary_contact = response.get("primary_contact", {})
+        project = response.get("project", {})
+        
+        if primary_contact and primary_contact.get("name") == "Dr. Sarah Mitchell":
+            print(f"   ✅ Primary contact is Dr. Sarah Mitchell")
+            print(f"   🏥 Project: {project.get('name', 'N/A')}")
+            print(f"   📞 Phone: {primary_contact.get('phone', 'N/A')}")
+            tests_passed += 1
+        else:
+            print(f"   ❌ Primary contact issue. Expected Dr. Sarah Mitchell, got: {primary_contact.get('name', 'None')}")
+            tests_failed += 1
+    else:
+        print("   ❌ Invalid response format")
+        tests_failed += 1
+    
+    # Test 3: GET /api/reports/nonexistent - Should return 404
+    print("\n" + "="*50)
+    print("TEST 3: GET /api/reports/nonexistent")
+    print("="*50)
+    
+    response = test_endpoint("GET", "/reports/nonexistent", expected_status=404,
+                           description="Should return 404 for non-existent project")
+    
+    if response is not None:
+        tests_passed += 1
+    else:
+        tests_failed += 1
+    
+    # Test 4: GET /api/projects - Verify projects are returned
+    print("\n" + "="*50)
+    print("TEST 4: GET /api/projects")
+    print("="*50)
+    
+    response = test_endpoint("GET", "/projects",
+                           description="Verify projects are returned (should include custom projects from DB too)")
+    
+    if response and isinstance(response, dict) and "projects" in response:
+        projects = response.get("projects", [])
+        print(f"   ✅ Projects returned: {len(projects)} projects")
+        
+        # Check if proj-001 and proj-002 are in the list
+        project_ids = [p.get("id") for p in projects]
+        if "proj-001" in project_ids and "proj-002" in project_ids:
+            print("   ✅ Both proj-001 and proj-002 found in projects list")
+            tests_passed += 1
+        else:
+            print(f"   ❌ Missing expected projects. Found IDs: {project_ids}")
+            tests_failed += 1
+            
+        # Show project details
+        for proj in projects[:3]:  # Show first 3 projects
+            print(f"   📋 Project: {proj.get('id')} - {proj.get('name', 'N/A')}")
+            if proj.get('primary_contact'):
+                print(f"      Contact: {proj['primary_contact'].get('name', 'N/A')}")
+    else:
+        print("   ❌ Invalid projects response")
+        tests_failed += 1
+    
+    # Test 5: POST /api/projects + GET /api/reports/{new_id} - Create custom project and test its report
+    print("\n" + "="*50)
+    print("TEST 5: POST /api/projects + GET /api/reports/{new_id}")
+    print("="*50)
+    
+    # Create a new project
+    new_project_data = {
+        "name": "Test Report Project",
+        "client_name": "Test Corp",
+        "address": "456 Test Ave",
+        "contact_name": "John Doe",
+        "contact_phone": "(555) 999-0000"
+    }
+    
+    create_response = test_endpoint("POST", "/projects", data=new_project_data,
+                                  description="Create a custom project")
+    
+    if create_response and isinstance(create_response, dict) and create_response.get("success"):
+        new_project = create_response.get("project", {})
+        new_project_id = new_project.get("id")
+        
+        if new_project_id:
+            print(f"   ✅ Project created with ID: {new_project_id}")
+            print(f"   📋 Project name: {new_project.get('name')}")
+            
+            # Now test the report for this new project
+            print(f"\n   Testing GET /api/reports/{new_project_id}")
+            report_response = test_endpoint("GET", f"/reports/{new_project_id}",
+                                          description=f"Should return 200 with report for custom project {new_project_id}")
+            
+            if report_response and isinstance(report_response, dict):
+                project_in_report = report_response.get("project", {})
+                primary_contact = report_response.get("primary_contact", {})
+                
+                if project_in_report.get("name") == "Test Report Project":
+                    print("   ✅ Report contains correct project name")
+                    
+                if primary_contact and primary_contact.get("name") == "John Doe":
+                    print("   ✅ Report contains correct primary contact (John Doe)")
+                    print(f"   📞 Contact phone: {primary_contact.get('phone', 'N/A')}")
+                    tests_passed += 1
+                else:
+                    print(f"   ❌ Primary contact issue. Expected John Doe, got: {primary_contact.get('name', 'None')}")
+                    tests_failed += 1
+                    
+                # Check report structure
+                if "summary" in report_response and "equipment_reports" in report_response:
+                    print("   ✅ Report has required structure (summary, equipment_reports)")
+                else:
+                    print("   ❌ Report missing required structure")
+                    
+            else:
+                print("   ❌ Failed to get report for new project")
+                tests_failed += 1
+        else:
+            print("   ❌ No project ID returned from creation")
+            tests_failed += 1
+    else:
+        print("   ❌ Failed to create project")
+        tests_failed += 1
+    
+    # Final Results
+    print("\n" + "="*80)
+    print("🏁 TESTING COMPLETE")
+    print("="*80)
+    print(f"✅ Tests Passed: {tests_passed}")
+    print(f"❌ Tests Failed: {tests_failed}")
+    print(f"📊 Success Rate: {(tests_passed/(tests_passed+tests_failed)*100):.1f}%" if (tests_passed+tests_failed) > 0 else "No tests run")
+    
+    if tests_failed == 0:
+        print("\n🎉 ALL TESTS PASSED! Reports endpoint is working correctly.")
+        return 0
+    else:
+        print(f"\n⚠️  {tests_failed} test(s) failed. Check the issues above.")
+        return 1
 
 if __name__ == "__main__":
-    success = asyncio.run(main())
-    exit(0 if success else 1)
+    exit_code = main()
+    sys.exit(exit_code)

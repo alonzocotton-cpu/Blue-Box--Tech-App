@@ -300,6 +300,18 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: POST /api/projects with {'name': 'Test Project', 'client_name': 'Test Client'} successfully creates new project and returns success=True with project data. Project creation working correctly."
 
+  - task: "Reports API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: All 5 report endpoint tests passed with 100% success rate. GET /api/reports/proj-001 returns report with James Wilson primary contact (+1 (212) 555-0147). GET /api/reports/proj-002 returns Metro Hospital report with Dr. Sarah Mitchell primary contact (+1 (312) 555-0289). GET /api/reports/nonexistent correctly returns 404. GET /api/projects returns 4 projects including custom DB projects. POST /api/projects + GET /api/reports/{new_id} successfully creates custom project 'Test Report Project' and generates report with John Doe primary contact. All reports contain required fields: project, primary_contact, equipment_reports, summary stats."
+
 frontend:
   - task: "Login Screen"
     implemented: true
@@ -443,3 +455,5 @@ agent_communication:
     message: "✅ BACKEND TESTING COMPLETE: All 7 requested endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/auth/login works with test credentials, returns technician John Smith + JWT token. 2) GET /api/dashboard/stats returns correct counts (3 projects, 3 active, 68 equipment). 3) GET /api/projects returns 3 projects with primary_contact fields. 4) GET /api/projects/proj-001 returns James Wilson contact with correct phone +1 (212) 555-0147. 5) POST /api/ai/chat with Claude AI returns meaningful 1248-char response about differential pressure. 6) GET /api/readings/eq-001 returns 10 readings. 7) POST /api/readings successfully creates new differential pressure reading. All new features working correctly, no breaking changes detected."
   - agent: "testing"
     message: "✅ SALESFORCE OAUTH INTEGRATION TESTING COMPLETE: All 7 requested Salesforce OAuth endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/auth/login with test credentials correctly falls through to mock login (success=true, source=mock). 2) GET /api/auth/salesforce/init returns proper auth_url with login.salesforce.com/services/oauth2/authorize and client_id. 3) GET /api/auth/salesforce/callback with error=access_denied correctly returns success=false, error=access_denied. 4) GET /api/auth/salesforce/callback without code correctly returns 400 error. 5) GET /api/projects returns 3 mock projects + custom projects with all required fields. 6) POST /api/projects successfully creates new project with name='Test Project', client_name='Test Client'. 7) GET /api/dashboard/stats returns all required fields including units_serviced. Salesforce OAuth integration working correctly, mock login fallback functional, existing endpoints not broken."
+  - agent: "testing"
+    message: "✅ REPORTS API TESTING COMPLETE: All 5 requested reports endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/reports/proj-001 returns complete report with James Wilson primary contact (+1 (212) 555-0147), 4 equipment reports, and summary stats (11 total readings, 1 photo). 2) GET /api/reports/proj-002 returns Metro Hospital report with Dr. Sarah Mitchell primary contact (+1 (312) 555-0289). 3) GET /api/reports/nonexistent correctly returns 404 for non-existent projects. 4) GET /api/projects returns 4 projects including custom MongoDB projects. 5) POST /api/projects + GET /api/reports/{new_id} successfully creates custom project 'Test Report Project' with John Doe contact and generates complete report. All reports contain required structure: project details, primary_contact field, equipment_reports array, and summary statistics. Custom projects from MongoDB also generate reports correctly."

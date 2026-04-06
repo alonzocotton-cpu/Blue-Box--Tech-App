@@ -191,6 +191,10 @@ export default function ProjectDetailScreen() {
               .header h1 { color: #a3e635; font-size: 24px; margin: 0; }
               .header h2 { color: #fff; font-size: 18px; margin: 4px 0; font-weight: 400; }
               .header p { color: #888; font-size: 12px; margin: 4px 0; }
+              .contact-card { background: #0d2137; border-radius: 10px; padding: 14px; margin-bottom: 16px; border: 1px solid #1a3a5c; }
+              .contact-card .label { color: #a3e635; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+              .contact-card .name { color: #fff; font-size: 15px; font-weight: 700; }
+              .contact-card .detail { color: #888; font-size: 12px; margin-top: 2px; }
               .summary { display: flex; gap: 12px; margin-bottom: 24px; }
               .summary-item { flex: 1; background: #0d2137; border-radius: 10px; padding: 14px; text-align: center; border: 1px solid #1a3a5c; }
               .summary-number { font-size: 28px; font-weight: 700; color: #a3e635; }
@@ -209,6 +213,14 @@ export default function ProjectDetailScreen() {
               <p>Generated: ${reportData.generated_at ? format(new Date(reportData.generated_at), 'MMM d, yyyy h:mm a') : 'Now'}</p>
               <p>Client: ${project.client_name || project.client || 'N/A'} | ${project.address || 'N/A'}</p>
             </div>
+
+            ${reportData.primary_contact ? `
+            <div class="contact-card">
+              <div class="label">Primary Contact</div>
+              <div class="name">${reportData.primary_contact.name || ''}</div>
+              <div class="detail">${reportData.primary_contact.title || ''}</div>
+              <div class="detail">${reportData.primary_contact.phone || ''} ${reportData.primary_contact.email ? '• ' + reportData.primary_contact.email : ''}</div>
+            </div>` : ''}
 
             <div class="sf-badge">
               Salesforce: ${sfStatus.mode === 'live' ? 'Connected ✓' : 'Mock Data — Configure credentials for live sync'}
@@ -789,6 +801,36 @@ export default function ProjectDetailScreen() {
                     </View>
                   </View>
                 </View>
+
+                {/* Primary Contact in Report */}
+                {reportData.primary_contact && (
+                  <View style={styles.reportContactCard}>
+                    <View style={styles.reportContactHeader}>
+                      <Ionicons name="person-circle" size={18} color={COLORS.lime} />
+                      <Text style={styles.reportContactTitle}>Primary Contact</Text>
+                    </View>
+                    <Text style={styles.reportContactName}>{reportData.primary_contact.name}</Text>
+                    <Text style={styles.reportContactDetail}>{reportData.primary_contact.title}</Text>
+                    {reportData.primary_contact.phone ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          const phone = reportData.primary_contact.phone.replace(/[^\d+]/g, '');
+                          Linking.openURL(`tel:${phone}`).catch(() => {});
+                        }}
+                        style={styles.reportContactPhoneRow}
+                      >
+                        <Ionicons name="call" size={14} color={COLORS.lime} />
+                        <Text style={styles.reportContactPhone}>{reportData.primary_contact.phone}</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {reportData.primary_contact.email ? (
+                      <View style={styles.reportContactPhoneRow}>
+                        <Ionicons name="mail" size={14} color={COLORS.gray} />
+                        <Text style={styles.reportContactDetail}>{reportData.primary_contact.email}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
 
                 {/* Equipment Data Changes */}
                 <Text style={styles.reportSectionTitle}>Equipment Data Changes</Text>
@@ -1774,6 +1816,47 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#2d4a6f',
+  },
+  reportContactCard: {
+    backgroundColor: COLORS.navyLight,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  reportContactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  reportContactTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.lime,
+    letterSpacing: 0.5,
+  },
+  reportContactName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.white,
+    marginBottom: 2,
+  },
+  reportContactDetail: {
+    fontSize: 13,
+    color: COLORS.gray,
+  },
+  reportContactPhoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  reportContactPhone: {
+    fontSize: 14,
+    color: COLORS.lime,
+    fontWeight: '500',
   },
   reportEquipmentHeader: {
     flexDirection: 'row',
