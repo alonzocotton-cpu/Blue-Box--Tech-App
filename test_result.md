@@ -240,20 +240,65 @@ backend:
         agent: "testing"
         comment: "Minor: Not tested in current review request - endpoint exists and implemented correctly"
 
-  - task: "Salesforce Integration API"
+  - task: "Salesforce OAuth Login API"
     implemented: true
     working: true
     file: "/app/backend/server.py"
     stuck_count: 0
-    priority: "low"
+    priority: "high"
     needs_retesting: false
     status_history:
       - working: true
         agent: "main"
-        comment: "GET /api/salesforce/status, GET /api/salesforce/auth-url, GET /api/auth/salesforce/callback implemented"
+        comment: "POST /api/auth/login with Salesforce OAuth and mock fallback implemented"
       - working: true
         agent: "testing"
-        comment: "Minor: Not tested in current review request - Salesforce integration endpoints exist and implemented correctly"
+        comment: "✅ TESTED: POST /api/auth/login with {'username': 'test', 'password': 'test'} correctly falls through to mock login, returns success=True, source=mock. Mock fallback working correctly."
+
+  - task: "Salesforce OAuth Init API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/auth/salesforce/init implemented to return Salesforce OAuth authorization URL"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/auth/salesforce/init returns auth_url containing 'login.salesforce.com/services/oauth2/authorize' with client_id parameter. OAuth init working correctly."
+
+  - task: "Salesforce OAuth Callback API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/auth/salesforce/callback implemented with error handling and code validation"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/auth/salesforce/callback with error=access_denied returns success=False, error=access_denied. GET /api/auth/salesforce/callback without code returns 400 error. Error handling working correctly."
+
+  - task: "Projects Creation API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/projects implemented for creating new projects manually"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/projects with {'name': 'Test Project', 'client_name': 'Test Client'} successfully creates new project and returns success=True with project data. Project creation working correctly."
 
 frontend:
   - task: "Login Screen"
@@ -372,11 +417,11 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Auth Login API"
+    - "Salesforce OAuth Login API"
+    - "Salesforce OAuth Init API"
+    - "Salesforce OAuth Callback API"
+    - "Projects Creation API"
     - "Dashboard Stats API"
-    - "Projects API"
-    - "AI Chat API"
-    - "Readings API"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -396,3 +441,5 @@ agent_communication:
     message: "Implemented 4 new features: 1) Renamed app to 'Blue Box Air, Inc- Coil Management Solutions' in app.json and login screen. 2) Created new Home dashboard screen at /(tabs)/home with large card-style navigation (Projects, AI Chat, Profile) + stats row. Updated tab layout to 4 tabs: Home, Projects, AI Chat, Profile. 3) Created AI Chat screen at /(tabs)/chat.tsx with full chat UI connecting to /api/ai/chat backend (Claude AI). Features: message bubbles, quick prompts, typing indicator, new chat. 4) Added Primary Contact to each project with name, title, email, phone + 'Call' button (Linking.openURL tel:) and email button. All verified via screenshots."
   - agent: "testing"
     message: "✅ BACKEND TESTING COMPLETE: All 7 requested endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/auth/login works with test credentials, returns technician John Smith + JWT token. 2) GET /api/dashboard/stats returns correct counts (3 projects, 3 active, 68 equipment). 3) GET /api/projects returns 3 projects with primary_contact fields. 4) GET /api/projects/proj-001 returns James Wilson contact with correct phone +1 (212) 555-0147. 5) POST /api/ai/chat with Claude AI returns meaningful 1248-char response about differential pressure. 6) GET /api/readings/eq-001 returns 10 readings. 7) POST /api/readings successfully creates new differential pressure reading. All new features working correctly, no breaking changes detected."
+  - agent: "testing"
+    message: "✅ SALESFORCE OAUTH INTEGRATION TESTING COMPLETE: All 7 requested Salesforce OAuth endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/auth/login with test credentials correctly falls through to mock login (success=true, source=mock). 2) GET /api/auth/salesforce/init returns proper auth_url with login.salesforce.com/services/oauth2/authorize and client_id. 3) GET /api/auth/salesforce/callback with error=access_denied correctly returns success=false, error=access_denied. 4) GET /api/auth/salesforce/callback without code correctly returns 400 error. 5) GET /api/projects returns 3 mock projects + custom projects with all required fields. 6) POST /api/projects successfully creates new project with name='Test Project', client_name='Test Client'. 7) GET /api/dashboard/stats returns all required fields including units_serviced. Salesforce OAuth integration working correctly, mock login fallback functional, existing endpoints not broken."

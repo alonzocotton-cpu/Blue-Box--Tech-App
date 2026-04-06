@@ -192,6 +192,7 @@ export default function LoginScreen() {
       if (data.success) {
         await AsyncStorage.setItem('authToken', data.token);
         await AsyncStorage.setItem('technician', JSON.stringify(data.technician));
+        await AsyncStorage.setItem('loginSource', data.source || 'mock');
         
         // Always enable biometric login for next time
         if (biometricAvailable) {
@@ -209,7 +210,7 @@ export default function LoginScreen() {
         
         router.replace('/(tabs)/home');
       } else {
-        Alert.alert('Login Failed', data.message || 'Invalid credentials');
+        Alert.alert('Login Failed', data.message || 'Invalid Salesforce credentials. Please check your username and password.');
       }
     } catch (error) {
       console.error('Login error:', error);

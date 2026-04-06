@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, Body
+from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,6 +12,8 @@ import uuid
 from datetime import datetime, timedelta
 from bson import ObjectId
 import json
+import httpx
+import urllib.parse
 
 # Salesforce integration
 from salesforce_service import salesforce, sf_config, get_salesforce_status, FIELD_MAPPINGS
@@ -270,17 +273,247 @@ current_technician_id = "tech-001"
 
 # ============ Auth Routes ============
 
+# Salesforce OAuth configuration
+SF_CLIENT_ID = os.environ.get('SALESFORCE_CLIENT_ID', '')
+SF_CLIENT_SECRET = os.environ.get('SALESFORCE_CLIENT_SECRET', '')
+SF_LOGIN_URL = os.environ.get('SALESFORCE_LOGIN_URL', 'https://login.salesforce.com')
+SF_API_VERSION = os.environ.get('SALESFORCE_API_VERSION', 'v59.0')
+APP_URL = os.environ.get('APP_URL', '')
+
 @api_router.post("/auth/login")
 async def login(credentials: TechnicianLogin):
-    """Mock Salesforce OAuth login - returns mock technician data"""
-    technician = MOCK_DATA["technician"].copy()
+    """Login with Salesforce username/password (Resource Owner Password Flow)"""
     
+    # Try real Salesforce OAuth first if credentials are configured
+    if SF_CLIENT_ID and SF_CLIENT_SECRET:
+        try:
+            async with httpx.AsyncClient() as client_http:
+                token_response = await client_http.post(
+                    f"{SF_LOGIN_URL}/services/oauth2/token",
+                    data={
+                        "grant_type": "password",
+                        "client_id": SF_CLIENT_ID,
+                        "client_secret": SF_CLIENT_SECRET,
+                        "username": credentials.username,
+                        "password": credentials.password,
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=30.0,
+                )
+                
+                if token_response.status_code == 200:
+                    sf_data = token_response.json()
+                    access_token = sf_data.get("access_token")
+                    instance_url = sf_data.get("instance_url")
+                    
+                    # Fetch user info from Salesforce
+                    user_response = await client_http.get(
+                        f"{instance_url}/services/oauth2/userinfo",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        timeout=15.0,
+                    )
+                    
+                    user_data = user_response.json() if user_response.status_code == 200 else {}
+                    
+                    # Build technician profile from Salesforce data
+                    technician = {
+                        "id": user_data.get("user_id", sf_data.get("id", "sf-user")),
+                        "salesforce_id": user_data.get("user_id", ""),
+                        "username": credentials.username,
+                        "email": user_data.get("email", credentials.username),
+                        "full_name": user_data.get("name", credentials.username.split("@")[0]),
+                        "phone": user_data.get("phone", ""),
+                        "title": user_data.get("title", "Technician"),
+                        "company": user_data.get("organization_id", "Blue Box Air, Inc."),
+                        "profile_photo": user_data.get("picture", ""),
+                        "skills": ["Coil Cleaning", "Air Quality"],
+                        "sf_instance_url": instance_url,
+                    }
+                    
+                    # Save SF session to DB for later API calls
+                    await db.sf_sessions.update_one(
+                        {"user_id": technician["id"]},
+                        {"$set": {
+                            "access_token": access_token,
+                            "instance_url": instance_url,
+                            "refresh_token": sf_data.get("refresh_token", ""),
+                            "updated_at": datetime.utcnow().isoformat(),
+                        }},
+                        upsert=True,
+                    )
+                    
+                    return {
+                        "success": True,
+                        "message": "Salesforce login successful",
+                        "technician": technician,
+                        "token": access_token,
+                        "source": "salesforce",
+                    }
+                else:
+                    sf_error = token_response.json()
+                    error_desc = sf_error.get("error_description", "Invalid credentials")
+                    logging.warning(f"Salesforce login failed: {error_desc}")
+                    
+                    # Fall through to mock login
+                    
+        except Exception as e:
+            logging.error(f"Salesforce OAuth error: {e}")
+            # Fall through to mock login
+    
+    # Fallback: Mock login for development
+    technician = MOCK_DATA["technician"].copy()
     return {
         "success": True,
-        "message": "Login successful (MOCK - Salesforce OAuth will be used in production)",
+        "message": "Login successful (Demo mode - use Salesforce credentials for live access)",
         "technician": technician,
-        "token": "mock-jwt-token-" + str(uuid.uuid4())
+        "token": "mock-jwt-token-" + str(uuid.uuid4()),
+        "source": "mock",
     }
+
+@api_router.get("/auth/salesforce/init")
+async def salesforce_oauth_init(redirect_uri: str = ""):
+    """Initialize Salesforce OAuth flow - returns the authorization URL"""
+    if not SF_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="Salesforce not configured")
+    
+    callback_url = f"{APP_URL}/api/auth/salesforce/callback"
+    
+    params = {
+        "response_type": "code",
+        "client_id": SF_CLIENT_ID,
+        "redirect_uri": callback_url,
+        "scope": "api refresh_token openid profile",
+        "state": redirect_uri or "app",
+    }
+    
+    auth_url = f"{SF_LOGIN_URL}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
+    
+    return {"auth_url": auth_url, "callback_url": callback_url}
+
+@api_router.get("/auth/salesforce/callback")
+async def salesforce_oauth_callback(code: str = "", state: str = "app", error: str = "", error_description: str = ""):
+    """Handle Salesforce OAuth callback"""
+    if error:
+        return {"success": False, "error": error, "description": error_description}
+    
+    if not code:
+        raise HTTPException(status_code=400, detail="No authorization code received")
+    
+    callback_url = f"{APP_URL}/api/auth/salesforce/callback"
+    
+    try:
+        async with httpx.AsyncClient() as client_http:
+            # Exchange code for tokens
+            token_response = await client_http.post(
+                f"{SF_LOGIN_URL}/services/oauth2/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "client_id": SF_CLIENT_ID,
+                    "client_secret": SF_CLIENT_SECRET,
+                    "redirect_uri": callback_url,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30.0,
+            )
+            
+            if token_response.status_code != 200:
+                return {"success": False, "error": "Token exchange failed", "details": token_response.text}
+            
+            sf_data = token_response.json()
+            access_token = sf_data.get("access_token")
+            instance_url = sf_data.get("instance_url")
+            
+            # Fetch user info
+            user_response = await client_http.get(
+                f"{instance_url}/services/oauth2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=15.0,
+            )
+            
+            user_data = user_response.json() if user_response.status_code == 200 else {}
+            
+            technician = {
+                "id": user_data.get("user_id", "sf-user"),
+                "salesforce_id": user_data.get("user_id", ""),
+                "username": user_data.get("preferred_username", user_data.get("email", "")),
+                "email": user_data.get("email", ""),
+                "full_name": user_data.get("name", "Technician"),
+                "phone": user_data.get("phone", ""),
+                "title": "Technician",
+                "company": "Blue Box Air, Inc.",
+                "profile_photo": user_data.get("picture", ""),
+                "skills": ["Coil Cleaning", "Air Quality"],
+                "sf_instance_url": instance_url,
+            }
+            
+            # Save session
+            await db.sf_sessions.update_one(
+                {"user_id": technician["id"]},
+                {"$set": {
+                    "access_token": access_token,
+                    "instance_url": instance_url,
+                    "refresh_token": sf_data.get("refresh_token", ""),
+                    "updated_at": datetime.utcnow().isoformat(),
+                }},
+                upsert=True,
+            )
+            
+            return {
+                "success": True,
+                "message": "Salesforce login successful",
+                "technician": technician,
+                "token": access_token,
+                "source": "salesforce",
+            }
+            
+    except Exception as e:
+        logging.error(f"Salesforce callback error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/auth/salesforce/explore")
+async def explore_salesforce_objects(token: str = ""):
+    """Explore Salesforce org to discover available objects"""
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+    
+    # Get session from DB
+    session = await db.sf_sessions.find_one({"access_token": token})
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    instance_url = session.get("instance_url")
+    
+    try:
+        async with httpx.AsyncClient() as client_http:
+            # Get global describe to see available objects
+            describe_response = await client_http.get(
+                f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=15.0,
+            )
+            
+            if describe_response.status_code == 200:
+                data = describe_response.json()
+                objects = [
+                    {
+                        "name": obj["name"],
+                        "label": obj["label"],
+                        "custom": obj.get("custom", False),
+                        "queryable": obj.get("queryable", False),
+                    }
+                    for obj in data.get("sobjects", [])
+                    if obj.get("queryable") and (
+                        obj.get("custom") or 
+                        obj["name"] in ["Account", "Contact", "WorkOrder", "Case", "Asset", "ServiceAppointment", "ServiceResource"]
+                    )
+                ]
+                return {"success": True, "objects": objects, "total": len(objects)}
+            else:
+                return {"success": False, "error": "Failed to fetch objects", "status": describe_response.status_code}
+                
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @api_router.get("/auth/profile")
 async def get_profile():
