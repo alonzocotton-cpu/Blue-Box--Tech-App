@@ -318,6 +318,54 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: All 5 report endpoint tests passed with 100% success rate. GET /api/reports/proj-001 returns report with James Wilson primary contact (+1 (212) 555-0147). GET /api/reports/proj-002 returns Metro Hospital report with Dr. Sarah Mitchell primary contact (+1 (312) 555-0289). GET /api/reports/nonexistent correctly returns 404. GET /api/projects returns 4 projects including custom DB projects. POST /api/projects + GET /api/reports/{new_id} successfully creates custom project 'Test Report Project' and generates report with John Doe primary contact. All reports contain required fields: project, primary_contact, equipment_reports, summary stats."
 
+  - task: "Salesforce Profile Sync API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/salesforce/sync-profile correctly returns 401 'Access token required' when no token provided. GET /api/salesforce/sync-profile?token=invalid correctly returns 401 'Invalid or expired Salesforce session' with invalid token. Authentication and authorization checks working correctly."
+
+  - task: "Salesforce Users Sync API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/salesforce/sync-users correctly returns 401 'Access token required' when no token provided. GET /api/salesforce/sync-users?token=invalid correctly returns 401 'Invalid or expired Salesforce session' with invalid token. Authentication and authorization checks working correctly."
+
+  - task: "Salesforce Users List API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/salesforce/users correctly returns {'users': [], 'total': 0} as expected since no Salesforce sync has occurred yet. Empty response structure is correct."
+
+  - task: "Salesforce Debug Configuration API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/auth/salesforce/debug returns configuration info with pkce_enabled: true, client_id_set: true, client_secret_set: true. PKCE is properly enabled and Salesforce configuration is correctly set up."
+
 frontend:
   - task: "Login Screen"
     implemented: true
@@ -435,11 +483,10 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Salesforce OAuth Login API"
-    - "Salesforce OAuth Init API"
-    - "Salesforce OAuth Callback API"
-    - "Projects Creation API"
-    - "Dashboard Stats API"
+    - "Salesforce Profile Sync API"
+    - "Salesforce Users Sync API"
+    - "Salesforce Users List API"
+    - "Salesforce Debug Configuration API"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -465,3 +512,5 @@ agent_communication:
     message: "✅ REPORTS API TESTING COMPLETE: All 5 requested reports endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/reports/proj-001 returns complete report with James Wilson primary contact (+1 (212) 555-0147), 4 equipment reports, and summary stats (11 total readings, 1 photo). 2) GET /api/reports/proj-002 returns Metro Hospital report with Dr. Sarah Mitchell primary contact (+1 (312) 555-0289). 3) GET /api/reports/nonexistent correctly returns 404 for non-existent projects. 4) GET /api/projects returns 4 projects including custom MongoDB projects. 5) POST /api/projects + GET /api/reports/{new_id} successfully creates custom project 'Test Report Project' with John Doe contact and generates complete report. All reports contain required structure: project details, primary_contact field, equipment_reports array, and summary statistics. Custom projects from MongoDB also generate reports correctly."
   - agent: "main"
     message: "Fixed critical Python 3.11 syntax errors in server.py. The issue was nested double quotes inside f-strings (e.g., f\"{get_sf_config()[\"key\"]}\") which is not supported in Python 3.11. Fixed by storing sf = get_sf_config() in local variable and using sf['key'] with single quotes in f-strings. Also removed duplicate /auth/salesforce/callback route definition. Backend is now running. Please retest the Salesforce OAuth endpoints (init, callback, redirect) and all previously working endpoints to confirm no regressions."
+  - agent: "testing"
+    message: "✅ SALESFORCE PROFILE & USER SYNC API TESTING COMPLETE: All 8 requested endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/salesforce/sync-profile correctly returns 401 'Access token required' without token and 401 'Invalid or expired Salesforce session' with invalid token. 2) GET /api/salesforce/sync-users correctly returns 401 'Access token required' without token and 401 'Invalid or expired Salesforce session' with invalid token. 3) GET /api/salesforce/users returns correct empty structure {'users': [], 'total': 0} since no SF sync has occurred. 4) GET /api/auth/salesforce/debug returns configuration with pkce_enabled: true, client_id_set: true, client_secret_set: true. 5) GET /api/auth/profile returns technician profile data (Alonzo Cotton with skills). 6) POST /api/auth/login with test credentials still works correctly (no regression) - returns John Smith technician data with mock source. All authentication/authorization checks working correctly, PKCE enabled, no regressions detected."

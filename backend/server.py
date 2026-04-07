@@ -546,16 +546,54 @@ async def salesforce_oauth_callback(code: str = "", state: str = "", error: str 
             
             user_data = user_response.json() if user_response.status_code == 200 else {}
             
+            # Fetch detailed profile from Salesforce User object (role, title, department, photo)
+            sf_user_id = user_data.get("user_id", "")
+            detailed_profile = {}
+            if sf_user_id:
+                try:
+                    sf_cfg = get_sf_config()
+                    soql = (
+                        f"SELECT Id, Name, FirstName, LastName, Email, Phone, MobilePhone, Title, "
+                        f"Department, CompanyName, UserRoleId, UserRole.Name, Profile.Name, "
+                        f"SmallPhotoUrl, FullPhotoUrl, IsActive, Username, AboutMe "
+                        f"FROM User WHERE Id = '{sf_user_id}'"
+                    )
+                    detail_resp = await client_http.get(
+                        f"{instance_url}/services/data/{sf_cfg['api_version']}/query",
+                        params={"q": soql},
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        timeout=15.0,
+                    )
+                    if detail_resp.status_code == 200:
+                        records = detail_resp.json().get("records", [])
+                        if records:
+                            detailed_profile = records[0]
+                            logging.info(f"SF Profile synced: {detailed_profile.get('Name')} - Role: {detailed_profile.get('UserRole', {})}")
+                except Exception as profile_err:
+                    logging.warning(f"Could not fetch detailed SF profile: {profile_err}")
+            
+            # Build rich technician profile merging userinfo + detailed User object
+            role_data = detailed_profile.get("UserRole") or {}
             technician = {
                 "id": user_data.get("user_id", "sf-user"),
                 "salesforce_id": user_data.get("user_id", ""),
-                "username": user_data.get("preferred_username", user_data.get("email", "")),
-                "email": user_data.get("email", ""),
-                "full_name": user_data.get("name", "Technician"),
-                "phone": user_data.get("phone", ""),
-                "title": "Technician",
-                "company": "Blue Box Air, Inc.",
-                "profile_photo": user_data.get("picture", ""),
+                "username": detailed_profile.get("Username") or user_data.get("preferred_username", user_data.get("email", "")),
+                "email": detailed_profile.get("Email") or user_data.get("email", ""),
+                "full_name": detailed_profile.get("Name") or user_data.get("name", "Technician"),
+                "first_name": detailed_profile.get("FirstName", ""),
+                "last_name": detailed_profile.get("LastName", ""),
+                "phone": detailed_profile.get("Phone") or detailed_profile.get("MobilePhone") or user_data.get("phone", ""),
+                "mobile_phone": detailed_profile.get("MobilePhone", ""),
+                "title": detailed_profile.get("Title") or "Technician",
+                "department": detailed_profile.get("Department", ""),
+                "company": detailed_profile.get("CompanyName") or "Blue Box Air, Inc.",
+                "role": role_data.get("Name", ""),
+                "role_id": detailed_profile.get("UserRoleId", ""),
+                "sf_profile_name": (detailed_profile.get("Profile") or {}).get("Name", ""),
+                "profile_photo": detailed_profile.get("FullPhotoUrl") or detailed_profile.get("SmallPhotoUrl") or user_data.get("picture", ""),
+                "small_photo": detailed_profile.get("SmallPhotoUrl", ""),
+                "about": detailed_profile.get("AboutMe", ""),
+                "is_active": detailed_profile.get("IsActive", True),
                 "skills": ["Coil Cleaning", "Air Quality"],
                 "sf_instance_url": instance_url,
             }
@@ -638,6 +676,180 @@ async def explore_salesforce_objects(token: str = ""):
                 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+# ============ Salesforce Profile & User Sync ============
+
+async def _get_sf_session(token: str):
+    """Helper to validate token and get session with instance_url"""
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+    session = await db.sf_sessions.find_one({"access_token": token})
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid or expired Salesforce session")
+    return session
+
+@api_router.get("/salesforce/sync-profile")
+async def sync_current_user_profile(token: str = ""):
+    """Sync the currently logged-in user's full profile and role from Salesforce"""
+    session = await _get_sf_session(token)
+    instance_url = session.get("instance_url")
+    user_id = session.get("user_id")
+    sf_cfg = get_sf_config()
+    
+    try:
+        async with httpx.AsyncClient() as client_http:
+            soql = (
+                f"SELECT Id, Name, FirstName, LastName, Email, Phone, MobilePhone, Title, "
+                f"Department, CompanyName, UserRoleId, UserRole.Name, Profile.Name, "
+                f"SmallPhotoUrl, FullPhotoUrl, IsActive, Username, AboutMe "
+                f"FROM User WHERE Id = '{user_id}'"
+            )
+            resp = await client_http.get(
+                f"{instance_url}/services/data/{sf_cfg['api_version']}/query",
+                params={"q": soql},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=15.0,
+            )
+            
+            if resp.status_code != 200:
+                logging.error(f"SF sync-profile query failed: {resp.status_code} {resp.text}")
+                return {"success": False, "error": f"Salesforce query failed: {resp.status_code}"}
+            
+            records = resp.json().get("records", [])
+            if not records:
+                return {"success": False, "error": "User not found in Salesforce"}
+            
+            sf_user = records[0]
+            role_data = sf_user.get("UserRole") or {}
+            profile_name = (sf_user.get("Profile") or {}).get("Name", "")
+            
+            profile = {
+                "salesforce_id": sf_user.get("Id", ""),
+                "username": sf_user.get("Username", ""),
+                "email": sf_user.get("Email", ""),
+                "full_name": sf_user.get("Name", ""),
+                "first_name": sf_user.get("FirstName", ""),
+                "last_name": sf_user.get("LastName", ""),
+                "phone": sf_user.get("Phone", ""),
+                "mobile_phone": sf_user.get("MobilePhone", ""),
+                "title": sf_user.get("Title", ""),
+                "department": sf_user.get("Department", ""),
+                "company": sf_user.get("CompanyName", ""),
+                "role": role_data.get("Name", ""),
+                "role_id": sf_user.get("UserRoleId", ""),
+                "sf_profile_name": profile_name,
+                "profile_photo": sf_user.get("FullPhotoUrl", ""),
+                "small_photo": sf_user.get("SmallPhotoUrl", ""),
+                "about": sf_user.get("AboutMe", ""),
+                "is_active": sf_user.get("IsActive", True),
+                "source": "salesforce",
+                "synced_at": datetime.utcnow().isoformat(),
+            }
+            
+            # Upsert into DB
+            await db.profiles.update_one(
+                {"salesforce_id": profile["salesforce_id"]},
+                {"$set": profile},
+                upsert=True,
+            )
+            
+            logging.info(f"Profile synced: {profile['full_name']} | Role: {profile['role']} | Title: {profile['title']}")
+            return {"success": True, "profile": profile}
+    
+    except Exception as e:
+        logging.error(f"SF sync-profile error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/salesforce/sync-users")
+async def sync_all_salesforce_users(token: str = ""):
+    """Sync ALL active users from Salesforce with their profiles and roles"""
+    session = await _get_sf_session(token)
+    instance_url = session.get("instance_url")
+    sf_cfg = get_sf_config()
+    
+    try:
+        async with httpx.AsyncClient() as client_http:
+            soql = (
+                f"SELECT Id, Name, FirstName, LastName, Email, Phone, MobilePhone, Title, "
+                f"Department, CompanyName, UserRoleId, UserRole.Name, Profile.Name, "
+                f"SmallPhotoUrl, FullPhotoUrl, IsActive, Username, AboutMe "
+                f"FROM User WHERE IsActive = true ORDER BY Name"
+            )
+            resp = await client_http.get(
+                f"{instance_url}/services/data/{sf_cfg['api_version']}/query",
+                params={"q": soql},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30.0,
+            )
+            
+            if resp.status_code != 200:
+                logging.error(f"SF sync-users query failed: {resp.status_code} {resp.text}")
+                return {"success": False, "error": f"Salesforce query failed: {resp.status_code}"}
+            
+            sf_users = resp.json().get("records", [])
+            synced_users = []
+            
+            for sf_user in sf_users:
+                role_data = sf_user.get("UserRole") or {}
+                profile_name = (sf_user.get("Profile") or {}).get("Name", "")
+                
+                user_profile = {
+                    "salesforce_id": sf_user.get("Id", ""),
+                    "username": sf_user.get("Username", ""),
+                    "email": sf_user.get("Email", ""),
+                    "full_name": sf_user.get("Name", ""),
+                    "first_name": sf_user.get("FirstName", ""),
+                    "last_name": sf_user.get("LastName", ""),
+                    "phone": sf_user.get("Phone", ""),
+                    "mobile_phone": sf_user.get("MobilePhone", ""),
+                    "title": sf_user.get("Title", ""),
+                    "department": sf_user.get("Department", ""),
+                    "company": sf_user.get("CompanyName", ""),
+                    "role": role_data.get("Name", ""),
+                    "role_id": sf_user.get("UserRoleId", ""),
+                    "sf_profile_name": profile_name,
+                    "profile_photo": sf_user.get("FullPhotoUrl", ""),
+                    "small_photo": sf_user.get("SmallPhotoUrl", ""),
+                    "about": sf_user.get("AboutMe", ""),
+                    "is_active": sf_user.get("IsActive", True),
+                    "source": "salesforce",
+                    "synced_at": datetime.utcnow().isoformat(),
+                }
+                
+                # Upsert each user into DB
+                await db.profiles.update_one(
+                    {"salesforce_id": user_profile["salesforce_id"]},
+                    {"$set": user_profile},
+                    upsert=True,
+                )
+                
+                synced_users.append({
+                    "name": user_profile["full_name"],
+                    "email": user_profile["email"],
+                    "role": user_profile["role"],
+                    "title": user_profile["title"],
+                    "department": user_profile["department"],
+                    "sf_profile": profile_name,
+                })
+            
+            logging.info(f"Synced {len(synced_users)} users from Salesforce")
+            return {
+                "success": True,
+                "total_synced": len(synced_users),
+                "users": synced_users,
+            }
+    
+    except Exception as e:
+        logging.error(f"SF sync-users error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/salesforce/users")
+async def get_synced_users():
+    """Get all synced Salesforce users from local DB"""
+    users = []
+    async for user in db.profiles.find({"source": "salesforce"}).sort("full_name", 1):
+        users.append(serialize_doc(user))
+    return {"users": users, "total": len(users)}
 
 @api_router.get("/auth/profile")
 async def get_profile(token: str = ""):
