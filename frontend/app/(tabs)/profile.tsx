@@ -80,12 +80,30 @@ export default function ProfileScreen() {
   const [syncingAll, setSyncingAll] = useState(false);
   const [teamUsers, setTeamUsers] = useState<any[]>([]);
   const [showTeam, setShowTeam] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     loadProfile();
     loadServiceStats();
     loadSyncedUsers();
   }, []);
+
+  // Check admin status when technician data loads
+  useEffect(() => {
+    if (technician?.email) {
+      checkAdminStatus(technician.email);
+    }
+  }, [technician?.email]);
+
+  const checkAdminStatus = async (email: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/check?email=${encodeURIComponent(email)}`);
+      const data = await res.json();
+      setIsAdmin(data.is_admin || false);
+    } catch (error) {
+      console.error('Admin check error:', error);
+    }
+  };
 
   const loadProfile = async () => {
     try {
@@ -702,6 +720,12 @@ export default function ProfileScreen() {
                 {technician?.source === 'salesforce' && technician?.synced_at ? (
                   <Text style={styles.syncedAt}>Synced from Salesforce</Text>
                 ) : null}
+                {isAdmin && (
+                  <View style={styles.adminBadge}>
+                    <Ionicons name="shield" size={14} color="#f59e0b" />
+                    <Text style={styles.adminBadgeText}>Administrator</Text>
+                  </View>
+                )}
               </>
             )}
 
@@ -1149,6 +1173,24 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 2,
     marginBottom: 8,
+  },
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f59e0b15',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#f59e0b30',
+  },
+  adminBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f59e0b',
+    letterSpacing: 1,
   },
   teamUserItem: {
     flexDirection: 'row',

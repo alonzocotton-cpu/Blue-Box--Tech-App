@@ -299,6 +299,101 @@ def generate_pkce_pair():
 # In-memory store for PKCE verifiers (keyed by state)
 _pkce_store: Dict[str, str] = {}
 
+# ============ Admin Access Control ============
+
+# Admin users list (seeded on startup)
+DEFAULT_ADMINS = [
+    {"email": "alonzo.cotton@blueboxair.com", "name": "Alonzo Cotton", "granted_by": "system"},
+]
+
+async def seed_admins():
+    """Seed default admin users"""
+    for admin in DEFAULT_ADMINS:
+        existing = await db.admins.find_one({"email": admin["email"]})
+        if not existing:
+            admin["is_admin"] = True
+            admin["created_at"] = datetime.utcnow().isoformat()
+            await db.admins.insert_one(admin)
+            logging.info(f"Admin access granted to: {admin['email']}")
+
+async def is_admin(email: str) -> bool:
+    """Check if a user has admin access"""
+    if not email:
+        return False
+    admin = await db.admins.find_one({"email": email.lower(), "is_admin": True})
+    return admin is not None
+
+@api_router.get("/admin/check")
+async def check_admin(email: str = ""):
+    """Check if a user has admin access"""
+    if not email:
+        return {"is_admin": False}
+    admin_status = await is_admin(email.lower())
+    admin_doc = await db.admins.find_one({"email": email.lower()})
+    return {
+        "is_admin": admin_status,
+        "email": email,
+        "granted_by": admin_doc.get("granted_by", "") if admin_doc else "",
+    }
+
+@api_router.get("/admin/list")
+async def list_admins():
+    """List all admin users"""
+    admins = []
+    async for a in db.admins.find({"is_admin": True}).sort("created_at", 1):
+        admins.append(serialize_doc(a))
+    return {"admins": admins, "total": len(admins)}
+
+@api_router.post("/admin/grant")
+async def grant_admin(data: dict):
+    """Grant admin access to a user (admin-only action)"""
+    requester_email = data.get("requester_email", "").strip().lower()
+    target_email = data.get("email", "").strip().lower()
+    target_name = data.get("name", "").strip()
+    
+    if not target_email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    # Check requester is admin
+    if not await is_admin(requester_email):
+        raise HTTPException(status_code=403, detail="Only admins can grant admin access")
+    
+    await db.admins.update_one(
+        {"email": target_email},
+        {"$set": {
+            "email": target_email,
+            "name": target_name,
+            "is_admin": True,
+            "granted_by": requester_email,
+            "granted_at": datetime.utcnow().isoformat(),
+        }},
+        upsert=True,
+    )
+    logging.info(f"Admin access granted to {target_email} by {requester_email}")
+    return {"success": True, "message": f"Admin access granted to {target_email}"}
+
+@api_router.post("/admin/revoke")
+async def revoke_admin(data: dict):
+    """Revoke admin access from a user (admin-only action)"""
+    requester_email = data.get("requester_email", "").strip().lower()
+    target_email = data.get("email", "").strip().lower()
+    
+    if not target_email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    if not await is_admin(requester_email):
+        raise HTTPException(status_code=403, detail="Only admins can revoke admin access")
+    
+    # Prevent self-revoke
+    if requester_email == target_email:
+        raise HTTPException(status_code=400, detail="Cannot revoke your own admin access")
+    
+    result = await db.admins.update_one(
+        {"email": target_email},
+        {"$set": {"is_admin": False, "revoked_by": requester_email, "revoked_at": datetime.utcnow().isoformat()}}
+    )
+    return {"success": result.modified_count > 0}
+
 @api_router.post("/auth/login")
 async def login(credentials: TechnicianLogin):
     """Login with Salesforce username/password (Resource Owner Password Flow)"""
@@ -623,6 +718,8 @@ async def salesforce_oauth_callback(code: str = "", state: str = "", error: str 
             )
             
             # Redirect to frontend with token and user data encoded in URL
+            # Check admin status
+            technician["is_admin"] = await is_admin(technician.get("email", ""))
             tech_json = urllib.parse.quote(json.dumps(technician))
             return RedirectResponse(
                 url=f"{frontend_url}/?sf_token={access_token}&sf_user={tech_json}&sf_success=true"
@@ -1960,3 +2057,4 @@ async def shutdown_db_client():
 @app.on_event("startup")
 async def startup_seed():
     await seed_roles()
+    await seed_admins()
