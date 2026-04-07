@@ -491,13 +491,14 @@ async def login(credentials: TechnicianLogin):
     
     # Fallback: Check if user has a synced Salesforce profile in DB
     synced_profile = None
-    if username:
+    login_name = credentials.username if credentials and credentials.username else ""
+    if login_name:
         # Search by email or username
         synced_profile = await db.profiles.find_one({
             "$or": [
-                {"email": {"$regex": username, "$options": "i"}},
-                {"username": {"$regex": username, "$options": "i"}},
-                {"full_name": {"$regex": username, "$options": "i"}},
+                {"email": {"$regex": login_name, "$options": "i"}},
+                {"username": {"$regex": login_name, "$options": "i"}},
+                {"full_name": {"$regex": login_name, "$options": "i"}},
             ],
             "source": "salesforce",
             "is_active": True,

@@ -354,7 +354,8 @@ export default function LoginScreen() {
                   // Open Salesforce login in browser
                   const sfLoginUrl = `${API_URL}/api/auth/salesforce/redirect`;
                   if (Platform.OS === 'web') {
-                    window.location.href = sfLoginUrl;
+                    // Open in new window to avoid iframe restrictions from Salesforce
+                    window.open(sfLoginUrl, '_blank', 'noopener,noreferrer');
                   } else {
                     await Linking.openURL(sfLoginUrl);
                   }
