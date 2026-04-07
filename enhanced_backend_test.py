@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Backend API Testing Script for Blue Box Air Technician App
-Testing the new DELETE /api/salesforce/users/inactive endpoint
+Enhanced Backend API Testing Script for DELETE /api/salesforce/users/inactive
+This script creates test inactive users to properly test the deletion functionality
 """
 
 import asyncio
@@ -9,21 +9,33 @@ import httpx
 import json
 import logging
 from datetime import datetime
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Backend URL from environment
-BACKEND_URL = "https://techservice-app-2.preview.emergentagent.com/api"
+# Load environment
+load_dotenv('/app/backend/.env')
 
-class BackendTester:
+# Backend URL and DB connection
+BACKEND_URL = "https://techservice-app-2.preview.emergentagent.com/api"
+mongo_url = os.environ['MONGO_URL']
+
+class EnhancedBackendTester:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=30.0)
+        self.db_client = AsyncIOMotorClient(mongo_url)
+        self.db = self.db_client[os.environ.get('DB_NAME', 'technician_app')]
         self.test_results = []
+        self.created_test_users = []
         
     async def close(self):
         await self.client.aclose()
+        await self.cleanup_test_users()
+        self.db_client.close()
     
     def log_test(self, test_name: str, success: bool, details: str = ""):
         """Log test result"""
@@ -37,6 +49,67 @@ class BackendTester:
             "details": details,
             "timestamp": datetime.now().isoformat()
         })
+    
+    async def create_test_inactive_users(self):
+        """Create some test inactive users for testing deletion"""
+        try:
+            test_users = [
+                {
+                    "salesforce_id": "test_inactive_1",
+                    "username": "test.inactive1@test.com",
+                    "email": "test.inactive1@test.com",
+                    "full_name": "Test Inactive User 1",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "phone": "+1-555-0001",
+                    "title": "Test Technician",
+                    "department": "Test Department",
+                    "company": "Test Company",
+                    "source": "salesforce",
+                    "is_active": False,  # This is the key - inactive user
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
+                },
+                {
+                    "salesforce_id": "test_inactive_2",
+                    "username": "test.inactive2@test.com",
+                    "email": "test.inactive2@test.com",
+                    "full_name": "Test Inactive User 2",
+                    "first_name": "Test",
+                    "last_name": "User2",
+                    "phone": "+1-555-0002",
+                    "title": "Test Technician",
+                    "department": "Test Department",
+                    "company": "Test Company",
+                    "source": "salesforce",
+                    "is_active": False,  # This is the key - inactive user
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+            ]
+            
+            # Insert test users
+            result = await self.db.profiles.insert_many(test_users)
+            self.created_test_users = [str(id) for id in result.inserted_ids]
+            
+            logger.info(f"Created {len(test_users)} test inactive users for testing")
+            return len(test_users)
+            
+        except Exception as e:
+            logger.error(f"Failed to create test inactive users: {e}")
+            return 0
+    
+    async def cleanup_test_users(self):
+        """Clean up any remaining test users"""
+        try:
+            if self.created_test_users:
+                from bson import ObjectId
+                result = await self.db.profiles.delete_many({
+                    "_id": {"$in": [ObjectId(id) for id in self.created_test_users]}
+                })
+                logger.info(f"Cleaned up {result.deleted_count} test users")
+        except Exception as e:
+            logger.error(f"Error cleaning up test users: {e}")
     
     async def test_auth_login_regression(self):
         """Test POST /api/auth/login - regression test to ensure it still works"""
@@ -84,7 +157,7 @@ class BackendTester:
     async def test_get_salesforce_users_before(self):
         """Test GET /api/salesforce/users before deletion to see current state"""
         try:
-            response = await self.client.get(f"{BACKEND_URL}/salesforce/users")
+            response = await self.client.get(f"{BACKEND_URL}/salesforce/users?active_only=false")
             
             if response.status_code == 200:
                 data = response.json()
@@ -161,33 +234,34 @@ class BackendTester:
     async def test_get_salesforce_users_after(self, expected_deleted: int = None):
         """Test GET /api/salesforce/users after deletion to verify only active users remain"""
         try:
-            response = await self.client.get(f"{BACKEND_URL}/salesforce/users")
+            # Test with active_only=false to see all users
+            response = await self.client.get(f"{BACKEND_URL}/salesforce/users?active_only=false")
             
             if response.status_code == 200:
                 data = response.json()
                 users = data.get("users", [])
                 total = data.get("total", 0)
                 
-                # Verify all returned users are active
+                # Count inactive users
                 inactive_users = [user for user in users if not user.get("is_active", True)]
                 
                 if len(inactive_users) == 0:
                     self.log_test(
-                        "GET /api/salesforce/users (after deletion)",
+                        "GET /api/salesforce/users (after deletion - all users)",
                         True,
-                        f"All {total} returned users are active. No inactive users found."
+                        f"No inactive users found in {total} total users. Deletion successful."
                     )
                     return True
                 else:
                     self.log_test(
-                        "GET /api/salesforce/users (after deletion)",
+                        "GET /api/salesforce/users (after deletion - all users)",
                         False,
                         f"Found {len(inactive_users)} inactive users still in results: {[u.get('full_name', 'Unknown') for u in inactive_users]}"
                     )
                     return False
             else:
                 self.log_test(
-                    "GET /api/salesforce/users (after deletion)",
+                    "GET /api/salesforce/users (after deletion - all users)",
                     False,
                     f"HTTP {response.status_code}: {response.text}"
                 )
@@ -195,7 +269,7 @@ class BackendTester:
                 
         except Exception as e:
             self.log_test(
-                "GET /api/salesforce/users (after deletion)",
+                "GET /api/salesforce/users (after deletion - all users)",
                 False,
                 f"Exception: {str(e)}"
             )
@@ -247,13 +321,18 @@ class BackendTester:
     async def run_all_tests(self):
         """Run all tests in sequence"""
         logger.info("=" * 80)
-        logger.info("STARTING BACKEND API TESTS - DELETE INACTIVE SALESFORCE USERS")
+        logger.info("ENHANCED BACKEND API TESTS - DELETE INACTIVE SALESFORCE USERS")
         logger.info("=" * 80)
+        
+        # Setup: Create test inactive users
+        created_count = await self.create_test_inactive_users()
+        if created_count == 0:
+            logger.warning("Failed to create test inactive users. Tests may not be comprehensive.")
         
         # Test 1: Regression test - ensure login still works
         await self.test_auth_login_regression()
         
-        # Test 2: Get current state of users
+        # Test 2: Get current state of users (including inactive)
         before_state = await self.test_get_salesforce_users_before()
         
         # Test 3: Delete inactive users (main test)
@@ -287,7 +366,7 @@ class BackendTester:
 
 async def main():
     """Main test runner"""
-    tester = BackendTester()
+    tester = EnhancedBackendTester()
     try:
         success = await tester.run_all_tests()
         return success

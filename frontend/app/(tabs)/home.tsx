@@ -211,8 +211,8 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: COLORS.navyLight,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#2d4a6f',
     flexDirection: 'row',
@@ -222,12 +222,12 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   headerLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
   },
   brandText: {
     fontSize: 20,

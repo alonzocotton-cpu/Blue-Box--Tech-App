@@ -401,16 +401,12 @@ export default function ProjectsScreen() {
         </View>
       )}
 
-      {/* Filter Tabs */}
+      {/* Combined Filters Row */}
       <View style={styles.filterContainer}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={STATUS_FILTERS}
-          keyExtractor={(item) => item}
-          contentContainerStyle={styles.filterList}
-          renderItem={({ item }) => (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterList}>
+          {STATUS_FILTERS.map(item => (
             <TouchableOpacity
+              key={item}
               style={[
                 styles.filterTab,
                 selectedFilter === item && styles.filterTabActive,
@@ -426,13 +422,8 @@ export default function ProjectsScreen() {
                 {item}
               </Text>
             </TouchableOpacity>
-          )}
-        />
-      </View>
-
-      {/* LOB Filter */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          ))}
+          <View style={styles.filterDivider} />
           {LOB_FILTERS.map(lob => (
             <TouchableOpacity
               key={lob.code}
@@ -693,17 +684,24 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   filterContainer: {
-    paddingVertical: 8,
+    paddingVertical: 6,
     backgroundColor: COLORS.navy,
   },
   filterList: {
     paddingHorizontal: 16,
     gap: 6,
+    alignItems: 'center',
+  },
+  filterDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: '#2d4a6f',
+    marginHorizontal: 4,
   },
   filterTab: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
     backgroundColor: COLORS.navyLight,
     borderWidth: 1,
     borderColor: '#2d4a6f',
@@ -721,14 +719,14 @@ const styles = StyleSheet.create({
     color: COLORS.navy,
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   projectCard: {
     backgroundColor: COLORS.navyLight,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#2d4a6f',
   },
@@ -736,7 +734,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   projectInfo: {
     flexDirection: 'row',
@@ -766,39 +764,39 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   projectName: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '600',
     color: COLORS.white,
-    marginBottom: 10,
-    lineHeight: 22,
+    marginBottom: 6,
+    lineHeight: 20,
   },
   clientRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
+    gap: 6,
+    marginBottom: 4,
   },
   clientName: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.gray,
     fontWeight: '500',
   },
   addressRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 8,
   },
   addressText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.grayDark,
   },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#2d4a6f',
   },
@@ -911,21 +909,21 @@ const styles = StyleSheet.create({
   lobFilterTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#2d4a6f',
     backgroundColor: COLORS.navyMid,
   },
   lobFilterDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   lobFilterText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: COLORS.gray,
   },

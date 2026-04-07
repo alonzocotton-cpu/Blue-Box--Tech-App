@@ -78,6 +78,7 @@ export default function ProfileScreen() {
   const [serviceStats, setServiceStats] = useState({ units_serviced: 0, total_readings: 0 });
   const [syncing, setSyncing] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [removingInactive, setRemovingInactive] = useState(false);
   const [teamUsers, setTeamUsers] = useState<any[]>([]);
   const [showTeam, setShowTeam] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -238,6 +239,37 @@ export default function ProfileScreen() {
     } catch (error) {
       console.error('Load synced users error:', error);
     }
+  };
+
+  const removeInactiveUsers = async () => {
+    Alert.alert(
+      'Remove Inactive Users',
+      'This will permanently remove all inactive Salesforce users from the database. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setRemovingInactive(true);
+            try {
+              const response = await fetch(`${API_URL}/api/salesforce/users/inactive`, { method: 'DELETE' });
+              const data = await response.json();
+              if (data.success) {
+                Alert.alert('Done', `Removed ${data.deleted} inactive users.`);
+                loadSyncedUsers();
+              } else {
+                Alert.alert('Error', data.error || 'Failed to remove inactive users.');
+              }
+            } catch (error) {
+              console.error('Remove inactive users error:', error);
+              Alert.alert('Error', 'Failed to remove inactive users.');
+            }
+            setRemovingInactive(false);
+          },
+        },
+      ]
+    );
   };
 
   const pickProfilePhoto = async () => {
@@ -923,6 +955,29 @@ export default function ProfileScreen() {
                       </View>
                     </View>
                   ) : null}
+                  {isAdmin && (
+                    <TouchableOpacity
+                      style={styles.menuItem}
+                      onPress={removeInactiveUsers}
+                      disabled={removingInactive}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.menuItemLeft}>
+                        <View style={[styles.menuItemIcon, { backgroundColor: '#ef444420' }]}>
+                          {removingInactive ? (
+                            <ActivityIndicator size="small" color="#ef4444" />
+                          ) : (
+                            <Ionicons name="person-remove" size={20} color="#ef4444" />
+                          )}
+                        </View>
+                        <View style={styles.menuItemText}>
+                          <Text style={[styles.menuItemTitle, { color: '#ef4444' }]}>Remove Inactive Users</Text>
+                          <Text style={styles.menuItemSubtitle}>Purge deactivated users from database</Text>
+                        </View>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color={COLORS.grayDark} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
 
@@ -1071,8 +1126,8 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: COLORS.navyLight,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#2d4a6f',
     flexDirection: 'row',
@@ -1080,47 +1135,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   brandText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: COLORS.white,
-    letterSpacing: 3,
+    letterSpacing: 2,
   },
   scrollView: {
     flex: 1,
   },
   profileHeader: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#2d4a6f',
   },
   avatarContainer: {
-    marginBottom: 16,
+    marginBottom: 10,
     position: 'relative',
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: COLORS.navyLight,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: COLORS.lime,
     overflow: 'hidden',
   },
   avatarImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   cameraOverlay: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: COLORS.lime,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1128,21 +1183,21 @@ const styles = StyleSheet.create({
     borderColor: COLORS.navy,
   },
   name: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: COLORS.white,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   title: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.lime,
     fontWeight: '500',
     marginBottom: 2,
   },
   company: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.gray,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   roleBadge: {
     flexDirection: 'row',
@@ -1293,31 +1348,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: COLORS.navyLight,
     marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 8,
-    borderRadius: 16,
-    paddingVertical: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    borderRadius: 12,
+    paddingVertical: 14,
     borderWidth: 1,
     borderColor: '#2d4a6f',
   },
   serviceStatItem: {
     flex: 1,
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   serviceStatNumber: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
     color: COLORS.white,
   },
   serviceStatLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: COLORS.gray,
     fontWeight: '500',
   },
   serviceStatDivider: {
     width: 1,
-    height: 50,
+    height: 36,
     backgroundColor: '#2d4a6f',
     alignSelf: 'center',
   },
@@ -1353,12 +1408,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   section: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   editSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   sectionTitle: {
     fontSize: 12,

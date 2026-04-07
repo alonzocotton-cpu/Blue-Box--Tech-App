@@ -78,7 +78,7 @@ export default function TeamScreen() {
   const [regions, setRegions] = useState<string[]>([]);
   const [totalMembers, setTotalMembers] = useState(0);
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [expandedRegions, setExpandedRegions] = useState<Record<string, boolean>>({});
+  const [expandedRoles, setExpandedRoles] = useState<Record<string, boolean>>({});
   const [assignForm, setAssignForm] = useState({
     member_name: '',
     role_name: '',
@@ -150,8 +150,8 @@ export default function TeamScreen() {
     setUserSearch(user.full_name || user.name || '');
   };
 
-  const toggleRegion = (region: string) => {
-    setExpandedRegions(prev => ({ ...prev, [region]: !prev[region] }));
+  const toggleRole = (key: string) => {
+    setExpandedRoles(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const assignMember = async () => {
@@ -243,52 +243,63 @@ export default function TeamScreen() {
     </TouchableOpacity>
   );
 
+  // Count total members in a node and all its children
+  const countAllMembers = (node: HierarchyNode): number => {
+    let count = node.members.length;
+    node.children.forEach(child => { count += countAllMembers(child); });
+    return count;
+  };
+
   const renderHierarchyNode = (node: HierarchyNode, depth: number = 0) => {
-    const indent = depth * 16;
+    const indent = depth * 12;
     const isRegionalOM = node.level === 2 && node.region;
     const regionColor = isRegionalOM ? (REGION_COLORS[node.region || ''] || COLORS.blue) : node.color;
-    const isExpanded = isRegionalOM ? expandedRegions[node.region || ''] !== false : true;
+    const nodeKey = `${node.name}-${node.region || ''}`;
+    const isExpandable = isRegionalOM || node.children.length > 0;
+    const isExpanded = expandedRoles[nodeKey] || false;
+    const totalInBranch = countAllMembers(node);
+
+    // In collapsed regions, skip roles with no members and no member-bearing children
+    if (depth > 1 && totalInBranch === 0) {
+      return null;
+    }
 
     return (
       <View key={`${node.name}-${node.region}-${depth}`} style={{ marginLeft: indent }}>
         {/* Role Header */}
         <TouchableOpacity
           style={styles.roleHeader}
-          onPress={() => isRegionalOM && toggleRegion(node.region || '')}
-          activeOpacity={isRegionalOM ? 0.7 : 1}
+          onPress={() => isExpandable && toggleRole(nodeKey)}
+          activeOpacity={isExpandable ? 0.7 : 1}
         >
-          <View style={styles.roleConnector}>
-            {depth > 0 && <View style={[styles.connectorLine, { backgroundColor: regionColor + '40' }]} />}
-            <View style={[styles.roleIconCircle, { backgroundColor: regionColor + '20', borderColor: regionColor + '40' }]}>
-              <Ionicons name={(node.icon || 'person') as any} size={16} color={regionColor} />
-            </View>
+          <View style={[styles.roleIconCircle, { backgroundColor: regionColor + '20', borderColor: regionColor + '40' }]}>
+            <Ionicons name={(node.icon || 'person') as any} size={14} color={regionColor} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.roleName}>{node.name}</Text>
             {node.region && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                <Ionicons name="location" size={12} color={regionColor} />
-                <Text style={[styles.roleRegion, { color: regionColor }]}>{node.region}</Text>
-              </View>
+              <Text style={[styles.roleRegion, { color: regionColor }]}>{node.region}</Text>
             )}
           </View>
-          <View style={styles.memberCount}>
-            <Text style={styles.memberCountText}>{node.members.length}</Text>
-          </View>
-          {isRegionalOM && (
+          {totalInBranch > 0 && (
+            <View style={[styles.memberCount, { backgroundColor: regionColor + '15' }]}>
+              <Text style={[styles.memberCountText, { color: regionColor }]}>{totalInBranch}</Text>
+            </View>
+          )}
+          {isExpandable && (
             <Ionicons
               name={isExpanded ? 'chevron-up' : 'chevron-down'}
-              size={18}
+              size={16}
               color={COLORS.grayDark}
-              style={{ marginLeft: 8 }}
+              style={{ marginLeft: 6 }}
             />
           )}
         </TouchableOpacity>
 
-        {/* Members */}
-        {node.members.map(m => renderMember(m, 44))}
+        {/* Members - show directly if node has members */}
+        {node.members.map(m => renderMember(m, 36))}
 
-        {/* Children */}
+        {/* Children - only show when expanded */}
         {isExpanded && node.children.map(child => renderHierarchyNode(child, depth + 1))}
       </View>
     );
@@ -572,73 +583,71 @@ const styles = StyleSheet.create({
   loadingText: { color: COLORS.gray, fontSize: 14 },
   header: {
     backgroundColor: COLORS.navyLight,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#2d4a6f',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  brandText: { fontSize: 24, fontWeight: '700', color: COLORS.white, letterSpacing: 3 },
+  brandText: { fontSize: 20, fontWeight: '700', color: COLORS.white, letterSpacing: 2 },
   addButton: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: COLORS.lime,
     alignItems: 'center', justifyContent: 'center',
   },
   statsBar: {
     flexDirection: 'row',
     backgroundColor: COLORS.navyLight,
-    marginHorizontal: 16, marginTop: 12,
-    borderRadius: 14, paddingVertical: 16,
+    marginHorizontal: 16, marginTop: 8,
+    borderRadius: 12, paddingVertical: 12,
     borderWidth: 1, borderColor: '#2d4a6f',
   },
   statItem: { flex: 1, alignItems: 'center' },
-  statNumber: { fontSize: 22, fontWeight: '700', color: COLORS.white },
-  statLabel: { fontSize: 11, color: COLORS.gray, marginTop: 4 },
-  statDivider: { width: 1, height: 36, backgroundColor: '#2d4a6f', alignSelf: 'center' },
+  statNumber: { fontSize: 20, fontWeight: '700', color: COLORS.white },
+  statLabel: { fontSize: 10, color: COLORS.gray, marginTop: 2 },
+  statDivider: { width: 1, height: 28, backgroundColor: '#2d4a6f', alignSelf: 'center' },
   regionLegend: {
     flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 16, paddingTop: 12, gap: 12,
+    paddingHorizontal: 16, paddingTop: 8, gap: 10,
   },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendText: { fontSize: 12, color: COLORS.gray },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 11, color: COLORS.gray },
   scrollView: { flex: 1 },
-  treeContainer: { padding: 16, paddingBottom: 0 },
+  treeContainer: { padding: 12, paddingBottom: 0 },
   roleHeader: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, paddingRight: 8, gap: 10,
+    paddingVertical: 8, paddingHorizontal: 4, gap: 8,
   },
-  roleConnector: { flexDirection: 'row', alignItems: 'center', width: 36 },
-  connectorLine: { width: 12, height: 2, marginRight: -4 },
   roleIconCircle: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 28, height: 28, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1,
   },
-  roleName: { fontSize: 14, fontWeight: '600', color: COLORS.white },
-  roleRegion: { fontSize: 11, fontWeight: '500' },
+  roleName: { fontSize: 13, fontWeight: '600', color: COLORS.white },
+  roleRegion: { fontSize: 10, fontWeight: '500' },
   memberCount: {
-    backgroundColor: COLORS.navyLight, borderRadius: 12,
-    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 2,
     borderWidth: 1, borderColor: '#2d4a6f',
   },
-  memberCountText: { fontSize: 12, fontWeight: '600', color: COLORS.gray },
+  memberCountText: { fontSize: 11, fontWeight: '600' },
   memberCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.navyLight,
-    borderRadius: 12, padding: 12, marginVertical: 3,
-    borderWidth: 1, borderColor: '#2d4a6f', gap: 10,
+    borderRadius: 10, padding: 10, marginVertical: 2,
+    borderWidth: 1, borderColor: '#2d4a6f', gap: 8,
   },
   memberAvatar: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
   },
-  memberInitial: { fontSize: 16, fontWeight: '700' },
-  memberName: { fontSize: 14, fontWeight: '600', color: COLORS.white },
-  memberRole: { fontSize: 11, fontWeight: '500', marginTop: 1 },
-  memberEmail: { fontSize: 10, color: COLORS.grayDark, marginTop: 1 },
+  memberInitial: { fontSize: 14, fontWeight: '700' },
+  memberName: { fontSize: 13, fontWeight: '600', color: COLORS.white },
+  memberRole: { fontSize: 10, fontWeight: '500', marginTop: 1 },
+  memberEmail: { fontSize: 9, color: COLORS.grayDark, marginTop: 1 },
   regionChip: {
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
   },

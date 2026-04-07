@@ -997,6 +997,14 @@ async def get_synced_users(active_only: bool = True, search: str = ""):
         users.append(serialize_doc(user))
     return {"users": users, "total": len(users)}
 
+@api_router.delete("/salesforce/users/inactive")
+async def remove_inactive_users():
+    """Remove all inactive Salesforce users from the database"""
+    result = await db.profiles.delete_many({"source": "salesforce", "is_active": False})
+    deleted = result.deleted_count
+    logging.info(f"Removed {deleted} inactive Salesforce users from DB")
+    return {"success": True, "deleted": deleted, "message": f"Removed {deleted} inactive users"}
+
 # ============ Salesforce Opportunity → Project Sync ============
 
 @api_router.get("/salesforce/sync-opportunities")
