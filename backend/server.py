@@ -851,6 +851,178 @@ async def get_synced_users():
         users.append(serialize_doc(user))
     return {"users": users, "total": len(users)}
 
+# ============ Roles & Hierarchy ============
+
+REGIONS = ["New York", "Florida", "New Orleans", "Dallas"]
+
+DEFAULT_ROLES = [
+    {"name": "CEO / Owner", "level": 0, "parent": None, "region": None, "color": "#f59e0b", "icon": "star"},
+    {"name": "Head of Operations", "level": 1, "parent": "CEO / Owner", "region": None, "color": "#8b5cf6", "icon": "briefcase"},
+    # One Operations Manager per region
+    {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "New York", "color": "#3b82f6", "icon": "business"},
+    {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "Florida", "color": "#3b82f6", "icon": "business"},
+    {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "New Orleans", "color": "#3b82f6", "icon": "business"},
+    {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "Dallas", "color": "#3b82f6", "icon": "business"},
+    # Per-region roles
+    {"name": "Field Supervisor", "level": 3, "parent": "Operations Manager", "region": None, "color": "#22c55e", "icon": "shield-checkmark"},
+    {"name": "Lead Technician", "level": 4, "parent": "Field Supervisor", "region": None, "color": "#c5d93d", "icon": "medal"},
+    {"name": "Technician", "level": 5, "parent": "Lead Technician", "region": None, "color": "#94a3b8", "icon": "construct"},
+    {"name": "Junior Technician", "level": 6, "parent": "Technician", "region": None, "color": "#64748b", "icon": "school"},
+]
+
+async def seed_roles():
+    """Seed default roles if the collection is empty"""
+    count = await db.roles.count_documents({})
+    if count == 0:
+        for role in DEFAULT_ROLES:
+            role["created_at"] = datetime.utcnow().isoformat()
+            await db.roles.insert_one(role)
+        logging.info(f"Seeded {len(DEFAULT_ROLES)} default roles")
+
+@api_router.get("/roles")
+async def get_roles():
+    """Get all roles"""
+    roles = []
+    async for role in db.roles.find().sort("level", 1):
+        roles.append(serialize_doc(role))
+    return {"roles": roles, "regions": REGIONS}
+
+@api_router.get("/roles/hierarchy")
+async def get_role_hierarchy():
+    """Get full role hierarchy as a tree structure"""
+    roles = []
+    async for role in db.roles.find().sort("level", 1):
+        roles.append(serialize_doc(role))
+    
+    # Get all team members with assigned roles
+    members = []
+    async for m in db.team_assignments.find():
+        members.append(serialize_doc(m))
+    
+    # Build tree
+    def build_tree():
+        tree = []
+        # CEO level
+        ceo = next((r for r in roles if r["level"] == 0), None)
+        if ceo:
+            ceo_members = [m for m in members if m.get("role_name") == ceo["name"] and not m.get("region")]
+            ceo_node = {**ceo, "members": ceo_members, "children": []}
+            
+            # Head of Operations
+            hoo = next((r for r in roles if r["level"] == 1), None)
+            if hoo:
+                hoo_members = [m for m in members if m.get("role_name") == hoo["name"] and not m.get("region")]
+                hoo_node = {**hoo, "members": hoo_members, "children": []}
+                
+                # Operations Managers per region
+                for region in REGIONS:
+                    om = next((r for r in roles if r["level"] == 2 and r.get("region") == region), None)
+                    if om:
+                        om_members = [m for m in members if m.get("role_name") == "Operations Manager" and m.get("region") == region]
+                        om_node = {**om, "members": om_members, "children": []}
+                        
+                        # Field-level roles under each region
+                        for level_role in [r for r in roles if r["level"] >= 3 and not r.get("region")]:
+                            level_members = [m for m in members if m.get("role_name") == level_role["name"] and m.get("region") == region]
+                            if level_members or True:  # Always show roles
+                                child_node = {**level_role, "region": region, "members": level_members, "children": []}
+                                om_node["children"].append(child_node)
+                        
+                        hoo_node["children"].append(om_node)
+                
+                ceo_node["children"].append(hoo_node)
+            
+            tree.append(ceo_node)
+        
+        return tree
+    
+    return {"hierarchy": build_tree(), "total_members": len(members), "regions": REGIONS}
+
+@api_router.post("/roles/assign")
+async def assign_role(data: dict):
+    """Assign a role to a team member"""
+    name = data.get("member_name", "").strip()
+    role_name = data.get("role_name", "").strip()
+    region = data.get("region", "").strip() or None
+    email = data.get("email", "").strip()
+    phone = data.get("phone", "").strip()
+    
+    if not name or not role_name:
+        raise HTTPException(status_code=400, detail="member_name and role_name are required")
+    
+    # Validate role exists
+    role = await db.roles.find_one({"name": role_name})
+    if not role:
+        raise HTTPException(status_code=400, detail=f"Role '{role_name}' does not exist")
+    
+    # If role is level 2 (Operations Manager), region is required
+    if role.get("level") == 2 and not region:
+        raise HTTPException(status_code=400, detail="Region is required for Operations Manager")
+    
+    # If role level >= 3, region is required (assigned under a regional OM)
+    if role.get("level", 0) >= 3 and not region:
+        raise HTTPException(status_code=400, detail="Region is required for field-level roles")
+    
+    assignment = {
+        "member_name": name,
+        "role_name": role_name,
+        "region": region,
+        "email": email,
+        "phone": phone,
+        "level": role.get("level", 5),
+        "color": role.get("color", "#94a3b8"),
+        "icon": role.get("icon", "person"),
+        "assigned_at": datetime.utcnow().isoformat(),
+    }
+    
+    # Upsert by name + role + region
+    await db.team_assignments.update_one(
+        {"member_name": name, "role_name": role_name, "region": region},
+        {"$set": assignment},
+        upsert=True,
+    )
+    
+    return {"success": True, "assignment": serialize_doc(assignment)}
+
+@api_router.delete("/roles/assign/{member_name}")
+async def remove_role_assignment(member_name: str, role_name: str = "", region: str = ""):
+    """Remove a role assignment"""
+    query = {"member_name": member_name}
+    if role_name:
+        query["role_name"] = role_name
+    if region:
+        query["region"] = region
+    
+    result = await db.team_assignments.delete_one(query)
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    return {"success": True, "deleted": member_name}
+
+@api_router.get("/team")
+async def get_team():
+    """Get all team members organized by region"""
+    members = []
+    async for m in db.team_assignments.find().sort([("level", 1), ("region", 1)]):
+        members.append(serialize_doc(m))
+    
+    by_region = {}
+    top_level = []
+    for m in members:
+        if m.get("region"):
+            region = m["region"]
+            if region not in by_region:
+                by_region[region] = []
+            by_region[region].append(m)
+        else:
+            top_level.append(m)
+    
+    return {
+        "leadership": top_level,
+        "regions": by_region,
+        "total": len(members),
+        "all_regions": REGIONS,
+    }
+
 @api_router.get("/auth/profile")
 async def get_profile(token: str = ""):
     """Get current technician profile"""
@@ -1495,3 +1667,7 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+@app.on_event("startup")
+async def startup_seed():
+    await seed_roles()

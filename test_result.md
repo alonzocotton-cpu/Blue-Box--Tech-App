@@ -366,6 +366,18 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: GET /api/auth/salesforce/debug returns configuration info with pkce_enabled: true, client_id_set: true, client_secret_set: true. PKCE is properly enabled and Salesforce configuration is correctly set up."
 
+  - task: "Roles & Hierarchy API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: All 8 Roles & Hierarchy endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/roles returns 10 roles (CEO/Owner, Head of Operations, 4x Operations Manager for NY/FL/NO/Dallas, Field Supervisor, Lead Technician, Technician, Junior Technician) with correct hierarchy levels (0-6) and 4 regions. 2) GET /api/roles/hierarchy returns tree structure with total_members count and 4 regions. 3) POST /api/roles/assign successfully assigns CEO (John Smith) without region requirement. 4) POST /api/roles/assign successfully assigns Operations Manager (Mike Jones) with New York region. 5) POST /api/roles/assign correctly fails with 400 when Operations Manager assigned without region (validation working). 6) GET /api/team returns leadership and regional team structure with assigned members. 7) GET /api/roles/hierarchy after assignments shows 2 total members in tree structure. 8) DELETE /api/roles/assign/John%20Smith successfully removes assignment. Role levels correct (0=CEO, 1=Head of Ops, 2=Operations Manager, 3+=field roles), region validation works, hierarchy tree structure correct, CRUD operations functional."
+
 frontend:
   - task: "Login Screen"
     implemented: true
@@ -514,3 +526,5 @@ agent_communication:
     message: "Fixed critical Python 3.11 syntax errors in server.py. The issue was nested double quotes inside f-strings (e.g., f\"{get_sf_config()[\"key\"]}\") which is not supported in Python 3.11. Fixed by storing sf = get_sf_config() in local variable and using sf['key'] with single quotes in f-strings. Also removed duplicate /auth/salesforce/callback route definition. Backend is now running. Please retest the Salesforce OAuth endpoints (init, callback, redirect) and all previously working endpoints to confirm no regressions."
   - agent: "testing"
     message: "✅ SALESFORCE PROFILE & USER SYNC API TESTING COMPLETE: All 8 requested endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/salesforce/sync-profile correctly returns 401 'Access token required' without token and 401 'Invalid or expired Salesforce session' with invalid token. 2) GET /api/salesforce/sync-users correctly returns 401 'Access token required' without token and 401 'Invalid or expired Salesforce session' with invalid token. 3) GET /api/salesforce/users returns correct empty structure {'users': [], 'total': 0} since no SF sync has occurred. 4) GET /api/auth/salesforce/debug returns configuration with pkce_enabled: true, client_id_set: true, client_secret_set: true. 5) GET /api/auth/profile returns technician profile data (Alonzo Cotton with skills). 6) POST /api/auth/login with test credentials still works correctly (no regression) - returns John Smith technician data with mock source. All authentication/authorization checks working correctly, PKCE enabled, no regressions detected."
+  - agent: "testing"
+    message: "✅ ROLES & HIERARCHY API TESTING COMPLETE: All 8 requested Roles & Hierarchy endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/roles returns 10 roles (CEO/Owner, Head of Operations, 4x Operations Manager for NY/FL/NO/Dallas, Field Supervisor, Lead Technician, Technician, Junior Technician) with correct hierarchy levels (0-6) and 4 regions. 2) GET /api/roles/hierarchy returns tree structure with total_members count and 4 regions. 3) POST /api/roles/assign successfully assigns CEO (John Smith) without region requirement. 4) POST /api/roles/assign successfully assigns Operations Manager (Mike Jones) with New York region. 5) POST /api/roles/assign correctly fails with 400 when Operations Manager assigned without region - validation working properly. 6) GET /api/team returns leadership and regional team structure with assigned members. 7) GET /api/roles/hierarchy after assignments shows 2 total members in tree structure. 8) DELETE /api/roles/assign/John%20Smith successfully removes assignment. All validations confirmed: role levels correct (0=CEO, 1=Head of Ops, 2=Operations Manager, 3+=field roles), region validation works for regional roles, hierarchy tree structure correct with children nodes, CRUD operations on assignments functional."

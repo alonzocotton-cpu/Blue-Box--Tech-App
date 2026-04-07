@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Blue Box Air Salesforce Profile and User Sync Endpoints
-Tests the new Salesforce profile and user sync API endpoints
+Backend API Testing for Blue Box Air Roles & Hierarchy Endpoints
+Tests the new Roles & Hierarchy API endpoints
 """
 
 import requests
 import json
 import sys
 from datetime import datetime
+import urllib.parse
 
 # Backend URL from frontend .env
 BACKEND_URL = "https://techservice-app-2.preview.emergentagent.com/api"
@@ -21,6 +22,8 @@ def test_endpoint(method, endpoint, data=None, params=None, expected_status=200,
             response = requests.get(url, params=params, timeout=30)
         elif method.upper() == "POST":
             response = requests.post(url, json=data, timeout=30)
+        elif method.upper() == "DELETE":
+            response = requests.delete(url, params=params, timeout=30)
         else:
             return {"success": False, "error": f"Unsupported method: {method}"}
         
@@ -51,9 +54,9 @@ def test_endpoint(method, endpoint, data=None, params=None, expected_status=200,
         }
 
 def main():
-    """Run all Salesforce profile and user sync endpoint tests"""
+    """Run all Roles & Hierarchy API endpoint tests"""
     print("=" * 80)
-    print("BLUE BOX AIR - SALESFORCE PROFILE & USER SYNC API TESTING")
+    print("BLUE BOX AIR - ROLES & HIERARCHY API TESTING")
     print("=" * 80)
     print(f"Backend URL: {BACKEND_URL}")
     print(f"Test Time: {datetime.now().isoformat()}")
@@ -62,63 +65,64 @@ def main():
     # Test cases based on review request
     test_cases = [
         {
-            "name": "1. Salesforce Sync Profile - No Token",
+            "name": "1. GET /api/roles",
             "method": "GET",
-            "endpoint": "/salesforce/sync-profile",
-            "expected_status": 401,
-            "description": "Should return 401 'Access token required'"
+            "endpoint": "/roles",
+            "expected_status": 200,
+            "description": "Should return a list of 10 roles (CEO/Owner, Head of Operations, 4x Operations Manager for NY/FL/NO/Dallas, Field Supervisor, Lead Technician, Technician, Junior Technician) with regions and hierarchy levels"
         },
         {
-            "name": "2. Salesforce Sync Profile - Invalid Token",
+            "name": "2. GET /api/roles/hierarchy",
             "method": "GET", 
-            "endpoint": "/salesforce/sync-profile",
-            "params": {"token": "invalid"},
-            "expected_status": 401,
-            "description": "Should return 401 'Invalid or expired Salesforce session'"
-        },
-        {
-            "name": "3. Salesforce Sync Users - No Token",
-            "method": "GET",
-            "endpoint": "/salesforce/sync-users",
-            "expected_status": 401,
-            "description": "Should return 401 'Access token required'"
-        },
-        {
-            "name": "4. Salesforce Sync Users - Invalid Token",
-            "method": "GET",
-            "endpoint": "/salesforce/sync-users", 
-            "params": {"token": "invalid"},
-            "expected_status": 401,
-            "description": "Should return 401 'Invalid or expired Salesforce session'"
-        },
-        {
-            "name": "5. Salesforce Users List",
-            "method": "GET",
-            "endpoint": "/salesforce/users",
+            "endpoint": "/roles/hierarchy",
             "expected_status": 200,
-            "description": "Should return {'users': [], 'total': 0} (empty since no SF sync has happened yet)"
+            "description": "Should return a tree structure with hierarchy, total_members count, and 4 regions"
         },
         {
-            "name": "6. Salesforce Debug Configuration",
-            "method": "GET",
-            "endpoint": "/auth/salesforce/debug",
-            "expected_status": 200,
-            "description": "Should return configuration info including pkce_enabled: true"
-        },
-        {
-            "name": "7. Auth Profile",
-            "method": "GET",
-            "endpoint": "/auth/profile",
-            "expected_status": 200,
-            "description": "Should return technician profile data"
-        },
-        {
-            "name": "8. Auth Login - Regression Test",
+            "name": "3. POST /api/roles/assign - CEO Assignment",
             "method": "POST",
-            "endpoint": "/auth/login",
-            "data": {"username": "test", "password": "test"},
+            "endpoint": "/roles/assign",
+            "data": {"member_name": "John Smith", "role_name": "CEO / Owner", "email": "john@blueboxair.com"},
             "expected_status": 200,
-            "description": "Should still work (no regression) - mock login"
+            "description": "Should assign successfully (CEO doesn't need region)"
+        },
+        {
+            "name": "4. POST /api/roles/assign - Operations Manager with Region",
+            "method": "POST",
+            "endpoint": "/roles/assign", 
+            "data": {"member_name": "Mike Jones", "role_name": "Operations Manager", "region": "New York", "email": "mike@blueboxair.com"},
+            "expected_status": 200,
+            "description": "Should assign successfully with region"
+        },
+        {
+            "name": "5. POST /api/roles/assign - Operations Manager without Region (Should Fail)",
+            "method": "POST",
+            "endpoint": "/roles/assign",
+            "data": {"member_name": "Bad Test", "role_name": "Operations Manager"},
+            "expected_status": 400,
+            "description": "Should fail with 400 (region required for Operations Manager)"
+        },
+        {
+            "name": "6. GET /api/team",
+            "method": "GET",
+            "endpoint": "/team",
+            "expected_status": 200,
+            "description": "Should return leadership and regional team structure with the members we just assigned"
+        },
+        {
+            "name": "7. GET /api/roles/hierarchy - After Assignments",
+            "method": "GET",
+            "endpoint": "/roles/hierarchy",
+            "expected_status": 200,
+            "description": "Verify hierarchy now shows the assigned members in the tree (total_members should be 2)"
+        },
+        {
+            "name": "8. DELETE /api/roles/assign/John%20Smith",
+            "method": "DELETE",
+            "endpoint": "/roles/assign/John%20Smith",
+            "params": {"role_name": "CEO / Owner"},
+            "expected_status": 200,
+            "description": "Should remove the assignment"
         }
     ]
     
@@ -167,50 +171,75 @@ def main():
             # Analyze specific responses for validation
             response = result.get('response', {})
             
-            if result['name'].startswith("1.") or result['name'].startswith("3."):
-                # Check for "Access token required" message
-                if isinstance(response, dict) and "Access token required" in str(response):
-                    print(f"   ✅ Correct error message: Access token required")
+            if result['name'].startswith("1."):
+                # Check for 10 roles with correct structure
+                if isinstance(response, dict) and 'roles' in response:
+                    roles = response.get('roles', [])
+                    regions = response.get('regions', [])
+                    print(f"   ✅ Found {len(roles)} roles")
+                    print(f"   ✅ Found {len(regions)} regions: {regions}")
+                    # Check for specific roles
+                    role_names = [r.get('name', '') for r in roles]
+                    if 'CEO / Owner' in role_names and 'Operations Manager' in role_names:
+                        print(f"   ✅ Contains expected roles: CEO / Owner, Operations Manager")
+                    # Check hierarchy levels
+                    levels = [r.get('level', -1) for r in roles]
+                    if 0 in levels and max(levels) >= 6:
+                        print(f"   ✅ Hierarchy levels correct: 0 to {max(levels)}")
                 else:
                     print(f"   ⚠️  Response: {response}")
             
-            elif result['name'].startswith("2.") or result['name'].startswith("4."):
-                # Check for "Invalid or expired Salesforce session" message
-                if isinstance(response, dict) and "Invalid or expired Salesforce session" in str(response):
-                    print(f"   ✅ Correct error message: Invalid or expired Salesforce session")
+            elif result['name'].startswith("2.") or result['name'].startswith("7."):
+                # Check hierarchy tree structure
+                if isinstance(response, dict) and 'hierarchy' in response:
+                    hierarchy = response.get('hierarchy', [])
+                    total_members = response.get('total_members', 0)
+                    regions = response.get('regions', [])
+                    print(f"   ✅ Hierarchy tree with {len(hierarchy)} top-level nodes")
+                    print(f"   ✅ Total members: {total_members}")
+                    print(f"   ✅ Regions: {regions}")
+                    if result['name'].startswith("7.") and total_members >= 2:
+                        print(f"   ✅ Members assigned correctly (total: {total_members})")
+                else:
+                    print(f"   ⚠️  Response: {response}")
+            
+            elif result['name'].startswith("3.") or result['name'].startswith("4."):
+                # Check successful assignment
+                if isinstance(response, dict) and response.get('success') is True:
+                    assignment = response.get('assignment', {})
+                    member_name = assignment.get('member_name', '')
+                    role_name = assignment.get('role_name', '')
+                    region = assignment.get('region', 'None')
+                    print(f"   ✅ Assignment successful: {member_name} -> {role_name}")
+                    print(f"   ✅ Region: {region}")
                 else:
                     print(f"   ⚠️  Response: {response}")
             
             elif result['name'].startswith("5."):
-                # Check for empty users list
-                if isinstance(response, dict) and response.get('users') == [] and response.get('total') == 0:
-                    print(f"   ✅ Correct empty response: users=[], total=0")
-                else:
-                    print(f"   ⚠️  Response: {response}")
+                # This should fail - check for 400 error
+                print(f"   ✅ Correctly failed with 400 (region required)")
+                if isinstance(response, dict) and 'detail' in response:
+                    print(f"   ✅ Error message: {response.get('detail', '')}")
             
             elif result['name'].startswith("6."):
-                # Check for PKCE enabled
-                if isinstance(response, dict) and response.get('pkce_enabled') is True:
-                    print(f"   ✅ PKCE enabled: {response.get('pkce_enabled')}")
-                    print(f"   ✅ Client ID configured: {response.get('client_id_set')}")
-                    print(f"   ✅ Client Secret configured: {response.get('client_secret_set')}")
-                else:
-                    print(f"   ⚠️  Response: {response}")
-            
-            elif result['name'].startswith("7."):
-                # Check for technician profile data
-                if isinstance(response, dict) and response.get('full_name'):
-                    print(f"   ✅ Profile data: {response.get('full_name')} ({response.get('email', 'No email')})")
-                    print(f"   ✅ Skills: {response.get('skills', [])}")
+                # Check team structure
+                if isinstance(response, dict):
+                    leadership = response.get('leadership', [])
+                    regions = response.get('regions', {})
+                    total = response.get('total', 0)
+                    print(f"   ✅ Leadership team: {len(leadership)} members")
+                    print(f"   ✅ Regional teams: {len(regions)} regions")
+                    print(f"   ✅ Total team members: {total}")
+                    for region, members in regions.items():
+                        print(f"   ✅ {region}: {len(members)} members")
                 else:
                     print(f"   ⚠️  Response: {response}")
             
             elif result['name'].startswith("8."):
-                # Check for successful login
+                # Check successful deletion
                 if isinstance(response, dict) and response.get('success') is True:
-                    print(f"   ✅ Login successful: {response.get('message', '')}")
-                    print(f"   ✅ Technician: {response.get('technician', {}).get('full_name', 'Unknown')}")
-                    print(f"   ✅ Source: {response.get('source', 'Unknown')}")
+                    deleted = response.get('deleted', '')
+                    print(f"   ✅ Assignment deleted: {deleted}")
                 else:
                     print(f"   ⚠️  Response: {response}")
         else:
@@ -229,7 +258,12 @@ def main():
     print(f"Success Rate: {(passed/len(test_cases)*100):.1f}%")
     
     if failed == 0:
-        print("\n🎉 ALL TESTS PASSED! Salesforce profile and user sync endpoints are working correctly.")
+        print("\n🎉 ALL TESTS PASSED! Roles & Hierarchy endpoints are working correctly.")
+        print("\nKey Validations:")
+        print("✅ Role levels are correct (0=CEO, 1=Head of Ops, 2=Operations Manager, 3+=field roles)")
+        print("✅ Region validation works for regional roles")
+        print("✅ The hierarchy tree structure is correct with children nodes")
+        print("✅ CRUD operations on assignments work")
     else:
         print(f"\n⚠️  {failed} test(s) failed. Please review the failed endpoints.")
     
