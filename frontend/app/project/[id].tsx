@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -67,6 +68,8 @@ export default function ProjectDetailScreen() {
   // Media state (photos & videos)
   const [mediaItems, setMediaItems] = useState<any[]>([]);
   const [mediaLoading, setMediaLoading] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState<any>(null);
+  const [showMediaViewer, setShowMediaViewer] = useState(false);
   
   // Share state
   const [showShareModal, setShowShareModal] = useState(false);
@@ -410,6 +413,31 @@ export default function ProjectDetailScreen() {
       console.error('Error fetching media:', error);
     }
   };
+
+  const handleDeleteMedia = (item: any) => {
+    Alert.alert(
+      'Delete Media',
+      `Delete this ${item.media_type === 'video' ? 'video' : 'photo'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await fetch(`${API_URL}/api/media/${item.id}`, { method: 'DELETE' });
+              setMediaItems(prev => prev.filter(m => m.id !== item.id));
+              setShowMediaViewer(false);
+              setSelectedMedia(null);
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete media');
+            }
+          },
+        },
+      ]
+    );
+  };
+
 
   useEffect(() => {
     if (id) fetchMedia();
@@ -1063,14 +1091,35 @@ export default function ProjectDetailScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Media Count */}
+            {mediaItems.length > 0 && (
+              <Text style={{ color: COLORS.gray, fontSize: 12, marginBottom: 12 }}>
+                {mediaItems.filter(m => m.media_type === 'photo').length} Photos · {mediaItems.filter(m => m.media_type === 'video').length} Videos
+              </Text>
+            )}
+
             {/* Media Grid */}
-            {(mediaItems.length > 0 || (photos && photos.length > 0)) ? (
+            {mediaItems.length > 0 ? (
               <View style={styles.photosGrid}>
                 {mediaItems.map((item: any, index: number) => (
-                  <View key={item.id || index} style={styles.photoThumb}>
-                    {item.media_type === 'video' ? (
+                  <TouchableOpacity
+                    key={item.id || index}
+                    style={styles.photoThumb}
+                    onPress={() => {
+                      setSelectedMedia(item);
+                      setShowMediaViewer(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    {item.media_uri && item.media_uri.startsWith('data:image') ? (
+                      <Image
+                        source={{ uri: item.media_uri }}
+                        style={styles.photoThumbImage}
+                        resizeMode="cover"
+                      />
+                    ) : item.media_type === 'video' ? (
                       <View style={styles.videoThumbOverlay}>
-                        <Ionicons name="videocam" size={28} color={COLORS.lime} />
+                        <Ionicons name="play-circle" size={36} color={COLORS.lime} />
                         {item.duration && (
                           <Text style={styles.videoDuration}>
                             {Math.round((item.duration || 0) / 1000)}s
@@ -1078,18 +1127,34 @@ export default function ProjectDetailScreen() {
                         )}
                       </View>
                     ) : (
-                      <Ionicons name="image" size={28} color={COLORS.lime} />
+                      <View style={styles.videoThumbOverlay}>
+                        <Ionicons name="image" size={32} color={COLORS.lime} />
+                      </View>
                     )}
-                    <Text style={styles.mediaLabel}>
-                      {item.media_type === 'video' ? 'Video' : 'Photo'}
-                    </Text>
-                  </View>
-                ))}
-                {photos?.map((photo: any, index: number) => (
-                  <View key={`photo-${photo.id || index}`} style={styles.photoThumb}>
-                    <Ionicons name="image" size={28} color={COLORS.grayDark} />
-                    <Text style={styles.mediaLabel}>Photo</Text>
-                  </View>
+                    {/* Type badge */}
+                    <View style={[styles.mediaTypeBadge, { backgroundColor: item.media_type === 'video' ? '#ef444480' : COLORS.lime + '80' }]}>
+                      <Text style={styles.mediaTypeBadgeText}>
+                        {item.media_type === 'video' ? 'VID' : 'IMG'}
+                      </Text>
+                    </View>
+                    {/* Timestamp */}
+                    {item.created_at && (
+                      <Text style={styles.mediaTimestamp}>
+                        {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </Text>
+                    )}
+                    {/* Delete button */}
+                    <TouchableOpacity
+                      style={styles.mediaDeleteBtn}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        handleDeleteMedia(item);
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="trash" size={14} color="#fff" />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
                 ))}
               </View>
             ) : (
@@ -1104,6 +1169,61 @@ export default function ProjectDetailScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Full Screen Media Viewer */}
+      <Modal visible={showMediaViewer} animationType="fade" transparent>
+        <View style={styles.mediaViewerOverlay}>
+          <View style={styles.mediaViewerHeader}>
+            <TouchableOpacity onPress={() => setShowMediaViewer(false)}>
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.mediaViewerTitle}>
+              {selectedMedia?.media_type === 'video' ? 'Video' : 'Photo'}
+              {selectedMedia?.caption ? ` - ${selectedMedia.caption}` : ''}
+            </Text>
+            <TouchableOpacity onPress={() => selectedMedia && handleDeleteMedia(selectedMedia)}>
+              <Ionicons name="trash-outline" size={24} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.mediaViewerBody}>
+            {selectedMedia?.media_uri && selectedMedia.media_uri.startsWith('data:image') ? (
+              <Image
+                source={{ uri: selectedMedia.media_uri }}
+                style={styles.mediaViewerImage}
+                resizeMode="contain"
+              />
+            ) : selectedMedia?.media_type === 'video' ? (
+              <View style={styles.mediaViewerPlaceholder}>
+                <Ionicons name="play-circle-outline" size={80} color={COLORS.lime} />
+                <Text style={{ color: COLORS.gray, marginTop: 12 }}>Video playback</Text>
+                {selectedMedia?.duration && (
+                  <Text style={{ color: COLORS.grayDark, marginTop: 4 }}>
+                    Duration: {Math.round((selectedMedia.duration || 0) / 1000)}s
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <View style={styles.mediaViewerPlaceholder}>
+                <Ionicons name="image-outline" size={80} color={COLORS.lime} />
+                <Text style={{ color: COLORS.gray, marginTop: 12 }}>Photo</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.mediaViewerFooter}>
+            {selectedMedia?.created_at && (
+              <Text style={styles.mediaViewerDate}>
+                {new Date(selectedMedia.created_at).toLocaleString('en-US', {
+                  month: 'long', day: 'numeric', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit',
+                })}
+              </Text>
+            )}
+            {selectedMedia?.caption && (
+              <Text style={styles.mediaViewerCaption}>{selectedMedia.caption}</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Service Log Modal */}
       <Modal visible={showServiceModal} transparent animationType="slide">
@@ -1605,11 +1725,97 @@ const styles = StyleSheet.create({
     width: '31%',
     aspectRatio: 1,
     backgroundColor: COLORS.navyLight,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#2d4a6f',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  photoThumbImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+  },
+  mediaTypeBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  mediaTypeBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  mediaTimestamp: {
+    position: 'absolute',
+    bottom: 4,
+    left: 6,
+    fontSize: 9,
+    color: '#ffffffbb',
+    fontWeight: '500',
+  },
+  mediaDeleteBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#ef444499',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaViewerOverlay: {
+    flex: 1,
+    backgroundColor: '#000000ee',
+  },
+  mediaViewerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 16,
+  },
+  mediaViewerTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
+  },
+  mediaViewerBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  mediaViewerImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+  },
+  mediaViewerPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaViewerFooter: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  mediaViewerDate: {
+    color: '#ffffffaa',
+    fontSize: 13,
+  },
+  mediaViewerCaption: {
+    color: '#fff',
+    fontSize: 14,
+    marginTop: 6,
   },
   emptyState: {
     alignItems: 'center',
