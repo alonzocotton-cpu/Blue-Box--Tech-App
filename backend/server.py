@@ -857,6 +857,247 @@ async def get_synced_users(active_only: bool = True, search: str = ""):
         users.append(serialize_doc(user))
     return {"users": users, "total": len(users)}
 
+# ============ Salesforce Opportunity → Project Sync ============
+
+@api_router.get("/salesforce/sync-opportunities")
+async def sync_opportunities(token: str = ""):
+    """Sync Salesforce Opportunities into app Projects with equipment"""
+    session = await _get_sf_session(token)
+    instance_url = session.get("instance_url")
+    user_id = session.get("user_id")
+    sf_cfg = get_sf_config()
+    
+    try:
+        async with httpx.AsyncClient() as client_http:
+            headers = {"Authorization": f"Bearer {token}"}
+            
+            # Query Opportunities with Account info
+            opp_soql = (
+                "SELECT Id, Name, StageName, Amount, Description, CloseDate, CreatedDate, "
+                "Account.Name, Account.BillingStreet, Account.BillingCity, Account.BillingState, "
+                "Account.BillingPostalCode, Owner.Name, Owner.Email, OwnerId, "
+                "Type, LeadSource, NextStep, Probability "
+                "FROM Opportunity ORDER BY CreatedDate DESC LIMIT 200"
+            )
+            opp_resp = await client_http.get(
+                f"{instance_url}/services/data/{sf_cfg['api_version']}/query",
+                params={"q": opp_soql},
+                headers=headers,
+                timeout=30.0,
+            )
+            
+            if opp_resp.status_code != 200:
+                logging.error(f"SF Opportunity query failed: {opp_resp.status_code} {opp_resp.text}")
+                return {"success": False, "error": f"Salesforce query failed: {opp_resp.status_code}"}
+            
+            opportunities = opp_resp.json().get("records", [])
+            synced_projects = []
+            new_project_count = 0
+            
+            for opp in opportunities:
+                account = opp.get("Account") or {}
+                owner = opp.get("Owner") or {}
+                
+                # Build address from Account billing info
+                addr_parts = [
+                    account.get("BillingStreet", ""),
+                    account.get("BillingCity", ""),
+                    account.get("BillingState", ""),
+                    account.get("BillingPostalCode", ""),
+                ]
+                address = ", ".join(p for p in addr_parts if p)
+                
+                # Map Salesforce stage to app status
+                stage = opp.get("StageName", "")
+                if stage in ["Closed Won", "Closed Lost"]:
+                    status = "Completed"
+                elif stage in ["Negotiation/Review", "Proposal/Price Quote"]:
+                    status = "On Hold"
+                else:
+                    status = "Active"
+                
+                project_data = {
+                    "salesforce_id": opp.get("Id"),
+                    "name": opp.get("Name", "Untitled"),
+                    "description": opp.get("Description", ""),
+                    "status": status,
+                    "sf_stage": stage,
+                    "client_name": account.get("Name", ""),
+                    "address": address,
+                    "amount": opp.get("Amount"),
+                    "probability": opp.get("Probability"),
+                    "opp_type": opp.get("Type", ""),
+                    "lead_source": opp.get("LeadSource", ""),
+                    "next_step": opp.get("NextStep", ""),
+                    "start_date": opp.get("CreatedDate", ""),
+                    "end_date": opp.get("CloseDate", ""),
+                    "assigned_tech_name": owner.get("Name", ""),
+                    "assigned_tech_email": owner.get("Email", ""),
+                    "assigned_tech_id": opp.get("OwnerId", ""),
+                    "primary_contact": {
+                        "name": owner.get("Name", ""),
+                        "email": owner.get("Email", ""),
+                    },
+                    "source": "salesforce",
+                    "synced_at": datetime.utcnow().isoformat(),
+                }
+                
+                # Check if this is a new project
+                existing = await db.sf_projects.find_one({"salesforce_id": opp.get("Id")})
+                is_new = existing is None
+                
+                # Upsert into sf_projects collection
+                await db.sf_projects.update_one(
+                    {"salesforce_id": opp.get("Id")},
+                    {"$set": project_data},
+                    upsert=True,
+                )
+                
+                if is_new:
+                    new_project_count += 1
+                    # Create notification for assigned tech/OM
+                    notification = {
+                        "type": "new_project",
+                        "title": "New Project Assigned",
+                        "message": f"{opp.get('Name', 'New project')} from {account.get('Name', 'a client')}",
+                        "project_name": opp.get("Name", ""),
+                        "salesforce_id": opp.get("Id"),
+                        "assigned_to": opp.get("OwnerId", ""),
+                        "assigned_to_name": owner.get("Name", ""),
+                        "read": False,
+                        "created_at": datetime.utcnow().isoformat(),
+                    }
+                    await db.notifications.insert_one(notification)
+                
+                synced_projects.append({
+                    "name": project_data["name"],
+                    "client": project_data["client_name"],
+                    "stage": stage,
+                    "status": status,
+                    "owner": owner.get("Name", ""),
+                    "is_new": is_new,
+                })
+            
+            # Now sync Assets (Equipment) linked to Accounts from these Opportunities
+            account_ids = list(set(
+                opp.get("Account", {}).get("Id") or ""
+                for opp in opportunities
+                if opp.get("Account")
+            ))
+            account_ids = [a for a in account_ids if a]  # filter empties
+            
+            equipment_count = 0
+            if account_ids:
+                # Query Assets for these accounts
+                ids_str = "','".join(account_ids)
+                asset_soql = (
+                    f"SELECT Id, Name, SerialNumber, Description, Status, "
+                    f"Product2.Name, Product2.Family, "
+                    f"Account.Name, AccountId, InstallDate, Quantity "
+                    f"FROM Asset WHERE AccountId IN ('{ids_str}') LIMIT 500"
+                )
+                asset_resp = await client_http.get(
+                    f"{instance_url}/services/data/{sf_cfg['api_version']}/query",
+                    params={"q": asset_soql},
+                    headers=headers,
+                    timeout=30.0,
+                )
+                
+                if asset_resp.status_code == 200:
+                    assets = asset_resp.json().get("records", [])
+                    for asset in assets:
+                        product = asset.get("Product2") or {}
+                        equip_data = {
+                            "salesforce_id": asset.get("Id"),
+                            "name": asset.get("Name", ""),
+                            "serial_number": asset.get("SerialNumber", ""),
+                            "description": asset.get("Description", ""),
+                            "status": asset.get("Status", ""),
+                            "product_name": product.get("Name", ""),
+                            "product_family": product.get("Family", ""),
+                            "account_id": asset.get("AccountId", ""),
+                            "account_name": (asset.get("Account") or {}).get("Name", ""),
+                            "install_date": asset.get("InstallDate", ""),
+                            "quantity": asset.get("Quantity", 1),
+                            "source": "salesforce",
+                            "synced_at": datetime.utcnow().isoformat(),
+                        }
+                        await db.sf_equipment.update_one(
+                            {"salesforce_id": asset.get("Id")},
+                            {"$set": equip_data},
+                            upsert=True,
+                        )
+                        equipment_count += 1
+            
+            logging.info(f"Synced {len(synced_projects)} opportunities, {new_project_count} new, {equipment_count} assets")
+            return {
+                "success": True,
+                "total_synced": len(synced_projects),
+                "new_projects": new_project_count,
+                "equipment_synced": equipment_count,
+                "projects": synced_projects,
+            }
+    
+    except Exception as e:
+        logging.error(f"SF Opportunity sync error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/salesforce/projects")
+async def get_sf_projects():
+    """Get all Salesforce-synced projects"""
+    projects = []
+    async for p in db.sf_projects.find().sort("synced_at", -1):
+        p_doc = serialize_doc(p)
+        # Get equipment count for this project's account
+        if p.get("client_name"):
+            equip_count = await db.sf_equipment.count_documents({"account_name": p["client_name"]})
+            p_doc["equipment_count"] = equip_count
+        projects.append(p_doc)
+    return {"projects": projects, "total": len(projects)}
+
+@api_router.get("/salesforce/equipment/{account_name}")
+async def get_sf_equipment(account_name: str):
+    """Get equipment synced from Salesforce for an account"""
+    equipment = []
+    async for e in db.sf_equipment.find({"account_name": account_name}):
+        equipment.append(serialize_doc(e))
+    return {"equipment": equipment, "total": len(equipment)}
+
+# ============ Notifications ============
+
+@api_router.get("/notifications")
+async def get_notifications(unread_only: bool = False):
+    """Get all notifications, optionally filtered to unread"""
+    query = {"read": False} if unread_only else {}
+    notifications = []
+    async for n in db.notifications.find(query).sort("created_at", -1).limit(50):
+        notifications.append(serialize_doc(n))
+    unread_count = await db.notifications.count_documents({"read": False})
+    return {"notifications": notifications, "unread_count": unread_count}
+
+@api_router.post("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str):
+    """Mark a notification as read"""
+    try:
+        result = await db.notifications.update_one(
+            {"_id": ObjectId(notif_id)},
+            {"$set": {"read": True, "read_at": datetime.utcnow().isoformat()}}
+        )
+        return {"success": result.modified_count > 0}
+    except Exception:
+        return {"success": False}
+
+@api_router.post("/notifications/read-all")
+async def mark_all_notifications_read():
+    """Mark all notifications as read"""
+    result = await db.notifications.update_many(
+        {"read": False},
+        {"$set": {"read": True, "read_at": datetime.utcnow().isoformat()}}
+    )
+    return {"success": True, "marked": result.modified_count}
+
+
+
 # ============ Roles & Hierarchy ============
 
 REGIONS = ["New York", "Florida", "New Orleans", "Dallas"]

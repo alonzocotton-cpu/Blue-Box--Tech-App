@@ -79,17 +79,35 @@ export default function ProjectsScreen() {
     contact_phone: '',
     contact_email: '',
   });
+  const [syncing, setSyncing] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const fetchProjects = async () => {
     try {
-      const [projectsRes, techData] = await Promise.all([
+      const [projectsRes, sfProjectsRes, techData] = await Promise.all([
         fetch(`${API_URL}/api/projects`),
+        fetch(`${API_URL}/api/salesforce/projects`),
         AsyncStorage.getItem('technician'),
       ]);
 
       const data = await projectsRes.json();
-      setProjects(data.projects || []);
-      setFilteredProjects(data.projects || []);
+      const sfData = await sfProjectsRes.json();
+      
+      // Merge mock/manual projects with SF projects
+      const allProjects = [
+        ...(data.projects || []),
+        ...(sfData.projects || []).map((p: any) => ({
+          ...p,
+          id: p.salesforce_id || p._id,
+          project_number: `SF-${(p.salesforce_id || '').slice(-8)}`,
+          equipment_count: p.equipment_count || 0,
+        })),
+      ];
+      
+      setProjects(allProjects);
+      setFilteredProjects(allProjects);
       if (techData) setTechnician(JSON.parse(techData));
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -99,8 +117,59 @@ export default function ProjectsScreen() {
     }
   };
 
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/notifications`);
+      const data = await res.json();
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unread_count || 0);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
+  const syncFromSalesforce = async () => {
+    setSyncing(true);
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Not Connected', 'Please log in with Salesforce first to sync opportunities.');
+        setSyncing(false);
+        return;
+      }
+      const res = await fetch(`${API_URL}/api/salesforce/sync-opportunities?token=${encodeURIComponent(token)}`);
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert(
+          'Sync Complete',
+          `${data.total_synced} opportunities synced\n${data.new_projects} new projects\n${data.equipment_synced} equipment items`,
+        );
+        fetchProjects();
+        fetchNotifications();
+      } else {
+        Alert.alert('Sync Failed', data.error || 'Could not sync from Salesforce');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to sync from Salesforce');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const markNotificationRead = async (id: string) => {
+    await fetch(`${API_URL}/api/notifications/${id}/read`, { method: 'POST' });
+    fetchNotifications();
+  };
+
+  const markAllRead = async () => {
+    await fetch(`${API_URL}/api/notifications/read-all`, { method: 'POST' });
+    fetchNotifications();
+    setShowNotifications(false);
+  };
+
   useEffect(() => {
     fetchProjects();
+    fetchNotifications();
   }, []);
 
   useEffect(() => {
@@ -218,6 +287,11 @@ export default function ProjectsScreen() {
           <Ionicons name="cube-outline" size={16} color={COLORS.lime} />
           <Text style={styles.equipmentText}>{item.equipment_count} Equipment</Text>
         </View>
+        {item.source === 'salesforce' && (
+          <View style={[styles.lobBadge, { backgroundColor: '#3b82f620' }]}>
+            <Text style={[styles.lobBadgeText, { color: '#3b82f6' }]}>SF</Text>
+          </View>
+        )}
         <Ionicons name="chevron-forward" size={20} color={COLORS.grayDark} />
       </View>
     </TouchableOpacity>
@@ -245,17 +319,87 @@ export default function ProjectsScreen() {
               resizeMode="contain"
             />
             <Text style={styles.brandText}>BLUE BOX</Text>
-            <TouchableOpacity 
-              style={styles.addButton}
-              onPress={() => setShowAddModal(true)}
-            >
-              <Ionicons name="add" size={24} color={COLORS.lime} />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              {/* SF Sync Button */}
+              <TouchableOpacity 
+                style={[styles.addButton, { backgroundColor: syncing ? COLORS.grayDark : '#3b82f6' }]}
+                onPress={syncFromSalesforce}
+                disabled={syncing}
+              >
+                {syncing ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="cloud-download" size={20} color="#fff" />
+                )}
+              </TouchableOpacity>
+              {/* Notification Bell */}
+              <TouchableOpacity 
+                style={styles.addButton}
+                onPress={() => setShowNotifications(!showNotifications)}
+              >
+                <Ionicons name="notifications" size={20} color={COLORS.lime} />
+                {unreadCount > 0 && (
+                  <View style={styles.notifBadge}>
+                    <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              {/* Add Project */}
+              <TouchableOpacity 
+                style={styles.addButton}
+                onPress={() => setShowAddModal(true)}
+              >
+                <Ionicons name="add" size={24} color={COLORS.lime} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
         <Text style={styles.welcomeText}>Welcome, {technician?.full_name || 'Technician'}</Text>
         <Text style={styles.headerSubtitle}>{filteredProjects.length} Projects Assigned</Text>
       </View>
+
+      {/* Notification Dropdown */}
+      {showNotifications && (
+        <View style={styles.notifDropdown}>
+          <View style={styles.notifDropdownHeader}>
+            <Text style={styles.notifDropdownTitle}>Notifications</Text>
+            {unreadCount > 0 && (
+              <TouchableOpacity onPress={markAllRead}>
+                <Text style={{ color: COLORS.lime, fontSize: 12, fontWeight: '600' }}>Mark All Read</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {notifications.length > 0 ? (
+            <ScrollView style={{ maxHeight: 250 }}>
+              {notifications.map((notif: any, idx: number) => (
+                <TouchableOpacity 
+                  key={notif._id || idx} 
+                  style={[styles.notifItem, !notif.read && styles.notifItemUnread]}
+                  onPress={() => {
+                    if (!notif.read && notif._id) markNotificationRead(notif._id);
+                    setShowNotifications(false);
+                  }}
+                >
+                  <Ionicons 
+                    name={notif.type === 'new_project' ? 'briefcase' : 'notifications'} 
+                    size={18} 
+                    color={notif.read ? COLORS.grayDark : COLORS.lime} 
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.notifTitle, !notif.read && { color: COLORS.white }]}>{notif.title}</Text>
+                    <Text style={styles.notifMessage}>{notif.message}</Text>
+                    <Text style={styles.notifTime}>
+                      {notif.created_at ? new Date(notif.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={{ color: COLORS.grayDark, textAlign: 'center', padding: 20 }}>No notifications</Text>
+          )}
+        </View>
+      )}
 
       {/* Filter Tabs */}
       <View style={styles.filterContainer}>
@@ -801,5 +945,71 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.gray,
     fontWeight: '500',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#ef4444',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  notifDropdown: {
+    backgroundColor: COLORS.navyMid,
+    marginHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  notifDropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2d4a6f',
+  },
+  notifDropdownTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  notifItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2d4a6f',
+  },
+  notifItemUnread: {
+    backgroundColor: COLORS.lime + '08',
+  },
+  notifTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.grayDark,
+  },
+  notifMessage: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
+  },
+  notifTime: {
+    fontSize: 10,
+    color: COLORS.grayDark,
+    marginTop: 4,
   },
 });

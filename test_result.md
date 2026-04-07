@@ -378,6 +378,66 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: All 8 Roles & Hierarchy endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/roles returns 10 roles (CEO/Owner, Head of Operations, 4x Operations Manager for NY/FL/NO/Dallas, Field Supervisor, Lead Technician, Technician, Junior Technician) with correct hierarchy levels (0-6) and 4 regions. 2) GET /api/roles/hierarchy returns tree structure with total_members count and 4 regions. 3) POST /api/roles/assign successfully assigns CEO (John Smith) without region requirement. 4) POST /api/roles/assign successfully assigns Operations Manager (Mike Jones) with New York region. 5) POST /api/roles/assign correctly fails with 400 when Operations Manager assigned without region (validation working). 6) GET /api/team returns leadership and regional team structure with assigned members. 7) GET /api/roles/hierarchy after assignments shows 2 total members in tree structure. 8) DELETE /api/roles/assign/John%20Smith successfully removes assignment. Role levels correct (0=CEO, 1=Head of Ops, 2=Operations Manager, 3+=field roles), region validation works, hierarchy tree structure correct, CRUD operations functional."
 
+  - task: "Salesforce Opportunity Sync API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/salesforce/sync-opportunities correctly returns 401 'Access token required' when no token provided. Also verified with invalid token returns 401 'Invalid or expired Salesforce session'. Authentication and authorization checks working correctly."
+
+  - task: "Salesforce Projects List API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/salesforce/projects returns correct structure {'projects': [], 'total': 0} as expected since no Salesforce sync has occurred yet. Empty response structure is correct."
+
+  - task: "Salesforce Equipment API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/salesforce/equipment/TestAccount returns correct structure {'equipment': [], 'total': 0} as expected for test account with no equipment synced."
+
+  - task: "Notifications API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/notifications returns correct structure {'notifications': [], 'unread_count': 0}. GET /api/notifications?unread_only=true also works correctly returning only unread notifications. Both endpoints working as expected."
+
+  - task: "Notifications Read-All API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/notifications/read-all returns correct structure {'success': True, 'marked': 0} indicating successful operation. Mark all notifications as read functionality working correctly."
+
 frontend:
   - task: "Login Screen"
     implemented: true
@@ -530,3 +590,5 @@ agent_communication:
     message: "✅ ROLES & HIERARCHY API TESTING COMPLETE: All 8 requested Roles & Hierarchy endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/roles returns 10 roles (CEO/Owner, Head of Operations, 4x Operations Manager for NY/FL/NO/Dallas, Field Supervisor, Lead Technician, Technician, Junior Technician) with correct hierarchy levels (0-6) and 4 regions. 2) GET /api/roles/hierarchy returns tree structure with total_members count and 4 regions. 3) POST /api/roles/assign successfully assigns CEO (John Smith) without region requirement. 4) POST /api/roles/assign successfully assigns Operations Manager (Mike Jones) with New York region. 5) POST /api/roles/assign correctly fails with 400 when Operations Manager assigned without region - validation working properly. 6) GET /api/team returns leadership and regional team structure with assigned members. 7) GET /api/roles/hierarchy after assignments shows 2 total members in tree structure. 8) DELETE /api/roles/assign/John%20Smith successfully removes assignment. All validations confirmed: role levels correct (0=CEO, 1=Head of Ops, 2=Operations Manager, 3+=field roles), region validation works for regional roles, hierarchy tree structure correct with children nodes, CRUD operations on assignments functional."
   - agent: "testing"
     message: "✅ SPECIFIC REVIEW REQUEST TESTING COMPLETE: All 4 requested tests passed with 100% success rate. Key findings: 1) GET /api/salesforce/users?active_only=true returns 198 active users correctly (all have is_active=true and source=salesforce). 2) GET /api/salesforce/users?search=Alonzo&active_only=true returns 1 user 'Alonzo Cotton' correctly - case-insensitive search working, active filter applied. 3) POST /api/projects with {'name': 'Coil Cleaning', 'client_name': 'Acme Corp'} successfully creates project with correct formatting: name='Acme Corp - Coil Cleaning' (title-cased), project_number='BBA-202604-5841' (starts with BBA-), client_name='Acme Corp' (title-cased). 4) POST /api/projects with {'name': 'Test', 'client_name': ''} correctly fails with 400 status and error message 'Client name is required'. Additional verification: active_only parameter works correctly (198 users when false vs true), search is case-insensitive, project name formatting handles various cases (e.g., 'test corp' -> 'Test Corp', 'URGENT CLIENT' -> 'Urgent Client'). All Blue Box Air backend functionality working as specified."
+  - agent: "testing"
+    message: "✅ SALESFORCE OPPORTUNITY SYNC & NOTIFICATIONS API TESTING COMPLETE: All 6 requested endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/salesforce/sync-opportunities correctly returns 401 'Access token required' when no token provided, and 401 'Invalid or expired Salesforce session' with invalid token - authentication working correctly. 2) GET /api/salesforce/projects returns correct structure {'projects': [], 'total': 0} as expected since no SF sync has occurred. 3) GET /api/salesforce/equipment/TestAccount returns correct structure {'equipment': [], 'total': 0} for test account. 4) GET /api/notifications returns correct structure {'notifications': [], 'unread_count': 0}. 5) GET /api/notifications?unread_only=true works correctly returning only unread notifications. 6) POST /api/notifications/read-all returns {'success': True, 'marked': 0} indicating successful operation. All Salesforce opportunity sync and notification endpoints working correctly with proper auth validation and response structures."
