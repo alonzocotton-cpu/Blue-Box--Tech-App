@@ -489,7 +489,49 @@ async def login(credentials: TechnicianLogin):
             logging.error(f"Salesforce OAuth error: {e}")
             # Fall through to mock login
     
-    # Fallback: Mock login for development
+    # Fallback: Check if user has a synced Salesforce profile in DB
+    synced_profile = None
+    if username:
+        # Search by email or username
+        synced_profile = await db.profiles.find_one({
+            "$or": [
+                {"email": {"$regex": username, "$options": "i"}},
+                {"username": {"$regex": username, "$options": "i"}},
+                {"full_name": {"$regex": username, "$options": "i"}},
+            ],
+            "source": "salesforce",
+            "is_active": True,
+        })
+    
+    if synced_profile:
+        technician = {
+            "id": str(synced_profile.get("_id", "")),
+            "salesforce_id": synced_profile.get("salesforce_id", ""),
+            "username": synced_profile.get("username", ""),
+            "email": synced_profile.get("email", ""),
+            "full_name": synced_profile.get("full_name", ""),
+            "first_name": synced_profile.get("first_name", ""),
+            "last_name": synced_profile.get("last_name", ""),
+            "phone": synced_profile.get("phone", ""),
+            "title": synced_profile.get("title", ""),
+            "department": synced_profile.get("department", ""),
+            "company": synced_profile.get("company", "") or "Blue Box Air, Inc.",
+            "role": synced_profile.get("role", ""),
+            "sf_profile_name": synced_profile.get("sf_profile_name", ""),
+            "profile_photo": synced_profile.get("profile_photo", ""),
+            "skills": ["Coil Management", "Air Quality"],
+            "source": "salesforce",
+            "is_admin": await is_admin(synced_profile.get("email", "")),
+        }
+        return {
+            "success": True,
+            "message": f"Welcome back, {technician['full_name']}",
+            "technician": technician,
+            "token": "mock-jwt-token-" + str(uuid.uuid4()),
+            "source": "salesforce_profile",
+        }
+    
+    # Final fallback: Mock login for development
     technician = MOCK_DATA["technician"].copy()
     return {
         "success": True,
