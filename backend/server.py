@@ -457,15 +457,41 @@ async def salesforce_oauth_redirect():
     }
     
     auth_url = f"{sf['login_url']}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
+    logging.info(f"SF OAuth redirect: callback_url={callback_url}, state={state_key}")
+    logging.info(f"SF OAuth redirect: full auth_url={auth_url[:200]}...")
     return RedirectResponse(url=auth_url)
 
+@api_router.get("/auth/salesforce/debug")
+async def salesforce_debug():
+    """Debug endpoint - shows current Salesforce OAuth configuration"""
+    sf = get_sf_config()
+    callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
+    return {
+        "configured": bool(sf["client_id"] and sf["client_secret"]),
+        "client_id_set": bool(sf["client_id"]),
+        "client_id_preview": sf["client_id"][:20] + "..." if sf["client_id"] else "NOT SET",
+        "client_secret_set": bool(sf["client_secret"]),
+        "login_url": sf["login_url"],
+        "redirect_uri": sf["redirect_uri"],
+        "callback_url_being_sent": callback_url,
+        "app_url": sf["app_url"],
+        "api_version": sf["api_version"],
+        "pkce_enabled": True,
+        "pkce_store_size": len(_pkce_store),
+        "note": "Make sure the 'callback_url_being_sent' matches EXACTLY what is configured in your Salesforce Connected App's Callback URL field."
+    }
+
+
 @api_router.get("/auth/salesforce/callback")
-async def salesforce_oauth_callback(code: str = "", state: str = "app", error: str = "", error_description: str = ""):
+async def salesforce_oauth_callback(code: str = "", state: str = "", error: str = "", error_description: str = ""):
     """Handle Salesforce OAuth callback"""
     sf = get_sf_config()
     frontend_url = sf["redirect_uri"].replace("/api/auth/salesforce/callback", "") if sf["redirect_uri"] else sf["app_url"]
     
+    logging.info(f"SF Callback received: code={'YES' if code else 'NO'}, state={state}, error={error}, error_desc={error_description}")
+    
     if error:
+        logging.warning(f"SF Callback error: {error} - {error_description}")
         # Redirect to frontend with error
         return RedirectResponse(url=f"{frontend_url}/?sf_error={urllib.parse.quote(error_description or error)}")
     
@@ -476,6 +502,7 @@ async def salesforce_oauth_callback(code: str = "", state: str = "app", error: s
     
     # Retrieve PKCE code_verifier from store
     code_verifier = _pkce_store.pop(state, None)
+    logging.info(f"SF Callback: PKCE verifier found={code_verifier is not None}, state={state}, stored_states={list(_pkce_store.keys())}")
     
     try:
         async with httpx.AsyncClient() as client_http:
@@ -490,6 +517,8 @@ async def salesforce_oauth_callback(code: str = "", state: str = "app", error: s
             if code_verifier:
                 token_data["code_verifier"] = code_verifier
             
+            logging.info(f"SF Token exchange: url={sf['login_url']}/services/oauth2/token, redirect_uri={callback_url}")
+            
             token_response = await client_http.post(
                 f"{sf['login_url']}/services/oauth2/token",
                 data=token_data,
@@ -497,10 +526,12 @@ async def salesforce_oauth_callback(code: str = "", state: str = "app", error: s
                 timeout=30.0,
             )
             
+            logging.info(f"SF Token exchange response: status={token_response.status_code}")
+            
             if token_response.status_code != 200:
                 error_msg = token_response.text
                 logging.error(f"SF token exchange failed: {error_msg}")
-                return RedirectResponse(url=f"{frontend_url}/?sf_error={urllib.parse.quote('Token exchange failed')}")
+                return RedirectResponse(url=f"{frontend_url}/?sf_error={urllib.parse.quote('Token exchange failed: ' + error_msg[:200])}")
             
             sf_data = token_response.json()
             access_token = sf_data.get("access_token")
