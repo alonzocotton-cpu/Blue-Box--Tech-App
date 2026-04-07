@@ -14,6 +14,9 @@ from bson import ObjectId
 import json
 import httpx
 import urllib.parse
+import hashlib
+import base64
+import secrets
 
 # Salesforce integration
 from salesforce_service import salesforce, sf_config, get_salesforce_status, FIELD_MAPPINGS
@@ -285,6 +288,17 @@ def get_sf_config():
         "app_url": os.environ.get('APP_URL', ''),
     }
 
+# PKCE helpers for Salesforce OAuth
+def generate_pkce_pair():
+    """Generate a PKCE code_verifier and code_challenge pair"""
+    code_verifier = secrets.token_urlsafe(64)[:128]  # 43-128 chars
+    digest = hashlib.sha256(code_verifier.encode('ascii')).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+    return code_verifier, code_challenge
+
+# In-memory store for PKCE verifiers (keyed by state)
+_pkce_store: Dict[str, str] = {}
+
 @api_router.post("/auth/login")
 async def login(credentials: TechnicianLogin):
     """Login with Salesforce username/password (Resource Owner Password Flow)"""
@@ -392,19 +406,26 @@ async def login(credentials: TechnicianLogin):
 
 @api_router.get("/auth/salesforce/init")
 async def salesforce_oauth_init(redirect_uri: str = ""):
-    """Initialize Salesforce OAuth flow - returns the authorization URL"""
+    """Initialize Salesforce OAuth flow - returns the authorization URL with PKCE"""
     sf = get_sf_config()
     if not sf["client_id"]:
         raise HTTPException(status_code=500, detail="Salesforce not configured")
     
     callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
+    # Generate PKCE pair
+    code_verifier, code_challenge = generate_pkce_pair()
+    state_key = f"init-{secrets.token_urlsafe(16)}"
+    _pkce_store[state_key] = code_verifier
+    
     params = {
         "response_type": "code",
         "client_id": sf["client_id"],
         "redirect_uri": callback_url,
         "scope": "api refresh_token openid profile",
-        "state": redirect_uri or "app",
+        "state": state_key,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     
     auth_url = f"{sf['login_url']}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
@@ -413,19 +434,26 @@ async def salesforce_oauth_init(redirect_uri: str = ""):
 
 @api_router.get("/auth/salesforce/redirect")
 async def salesforce_oauth_redirect():
-    """Redirect user to Salesforce login page (browser-based flow)"""
+    """Redirect user to Salesforce login page (browser-based flow) with PKCE"""
     sf = get_sf_config()
     if not sf["client_id"]:
         raise HTTPException(status_code=500, detail="Salesforce not configured")
     
     callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
+    # Generate PKCE pair
+    code_verifier, code_challenge = generate_pkce_pair()
+    state_key = f"redirect-{secrets.token_urlsafe(16)}"
+    _pkce_store[state_key] = code_verifier
+    
     params = {
         "response_type": "code",
         "client_id": sf["client_id"],
         "redirect_uri": callback_url,
         "scope": "api refresh_token openid profile",
-        "state": "browser_flow",
+        "state": state_key,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     
     auth_url = f"{sf['login_url']}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
@@ -446,18 +474,25 @@ async def salesforce_oauth_callback(code: str = "", state: str = "app", error: s
     
     callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
+    # Retrieve PKCE code_verifier from store
+    code_verifier = _pkce_store.pop(state, None)
+    
     try:
         async with httpx.AsyncClient() as client_http:
-            # Exchange code for tokens
+            # Exchange code for tokens (with PKCE code_verifier)
+            token_data = {
+                "grant_type": "authorization_code",
+                "code": code,
+                "client_id": sf["client_id"],
+                "client_secret": sf["client_secret"],
+                "redirect_uri": callback_url,
+            }
+            if code_verifier:
+                token_data["code_verifier"] = code_verifier
+            
             token_response = await client_http.post(
                 f"{sf['login_url']}/services/oauth2/token",
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "client_id": sf["client_id"],
-                    "client_secret": sf["client_secret"],
-                    "redirect_uri": callback_url,
-                },
+                data=token_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=30.0,
             )
