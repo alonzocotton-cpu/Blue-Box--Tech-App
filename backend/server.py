@@ -844,10 +844,16 @@ async def sync_all_salesforce_users(token: str = ""):
         return {"success": False, "error": str(e)}
 
 @api_router.get("/salesforce/users")
-async def get_synced_users():
-    """Get all synced Salesforce users from local DB"""
+async def get_synced_users(active_only: bool = True, search: str = ""):
+    """Get synced Salesforce users from local DB, active only by default"""
+    query: dict = {"source": "salesforce"}
+    if active_only:
+        query["is_active"] = True
+    if search:
+        query["full_name"] = {"$regex": search, "$options": "i"}
+    
     users = []
-    async for user in db.profiles.find({"source": "salesforce"}).sort("full_name", 1):
+    async for user in db.profiles.find(query).sort("full_name", 1):
         users.append(serialize_doc(user))
     return {"users": users, "total": len(users)}
 
@@ -1191,22 +1197,40 @@ async def get_projects(status: Optional[str] = None):
 
 @api_router.post("/projects")
 async def create_project(data: dict = Body(...)):
-    """Create a new project manually"""
+    """Create a new project manually with proper naming convention"""
     now = datetime.now()
     project_id = f"proj-custom-{int(now.timestamp())}"
+    
+    # Enforce naming convention: "Client Name - Service Description"
+    client_name = data.get("client_name", "").strip()
+    project_name = data.get("name", "").strip()
+    
+    if not client_name:
+        raise HTTPException(status_code=400, detail="Client name is required")
+    if not project_name:
+        raise HTTPException(status_code=400, detail="Project name is required")
+    
+    # Auto-format project name if it doesn't already include client name
+    if client_name.lower() not in project_name.lower():
+        formatted_name = f"{client_name} - {project_name}"
+    else:
+        formatted_name = project_name
+    
+    # Title case the formatted name
+    formatted_name = formatted_name.title()
     
     new_project = {
         "id": project_id,
         "salesforce_id": None,
-        "project_number": f"PRJ-{now.strftime('%Y')}-{project_id[-4:]}",
-        "name": data.get("name", "Untitled Project"),
+        "project_number": f"BBA-{now.strftime('%Y%m')}-{project_id[-4:]}",
+        "name": formatted_name,
         "description": data.get("description", ""),
         "status": data.get("status", "Active"),
-        "client_name": data.get("client_name", ""),
+        "client_name": client_name.title(),
         "address": data.get("address", ""),
         "start_date": data.get("start_date", now.isoformat()),
         "end_date": data.get("end_date", (now + timedelta(days=30)).isoformat()),
-        "assigned_technician_id": "tech-001",
+        "assigned_technician_id": data.get("assigned_technician_id", "tech-001"),
         "equipment_count": 0,
         "primary_contact": {
             "name": data.get("contact_name", ""),

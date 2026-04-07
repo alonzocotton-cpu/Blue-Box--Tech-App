@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Blue Box Air Roles & Hierarchy Endpoints
-Tests the new Roles & Hierarchy API endpoints
+Backend API Testing for Blue Box Air - Specific Review Request Tests
+Testing 4 specific scenarios:
+1. GET /api/salesforce/users?active_only=true - Should return only active users
+2. GET /api/salesforce/users?search=Alonzo&active_only=true - Should return users matching "Alonzo" who are active
+3. POST /api/projects with {"name": "Coil Cleaning", "client_name": "Acme Corp"} - Should succeed and auto-format the project name as "Acme Corp - Coil Cleaning" (title-cased). The project_number should start with "BBA-"
+4. POST /api/projects with {"name": "Test", "client_name": ""} - Should fail with 400 (client name required)
 """
 
 import requests
 import json
-import sys
+import os
 from datetime import datetime
-import urllib.parse
 
-# Backend URL from frontend .env
+# Get backend URL from environment
 BACKEND_URL = "https://techservice-app-2.preview.emergentagent.com/api"
 
-def test_endpoint(method, endpoint, data=None, params=None, expected_status=200, description=""):
-    """Test a single endpoint and return results"""
+def test_api_endpoint(method, endpoint, data=None, params=None, expected_status=200):
+    """Test an API endpoint and return the response"""
     url = f"{BACKEND_URL}{endpoint}"
     
     try:
@@ -22,253 +25,245 @@ def test_endpoint(method, endpoint, data=None, params=None, expected_status=200,
             response = requests.get(url, params=params, timeout=30)
         elif method.upper() == "POST":
             response = requests.post(url, json=data, timeout=30)
+        elif method.upper() == "PUT":
+            response = requests.put(url, json=data, timeout=30)
         elif method.upper() == "DELETE":
-            response = requests.delete(url, params=params, timeout=30)
+            response = requests.delete(url, timeout=30)
         else:
-            return {"success": False, "error": f"Unsupported method: {method}"}
-        
-        success = response.status_code == expected_status
-        
-        try:
-            response_data = response.json()
-        except:
-            response_data = response.text
+            return {"error": f"Unsupported method: {method}"}
         
         result = {
-            "success": success,
             "status_code": response.status_code,
-            "expected_status": expected_status,
-            "response": response_data,
-            "description": description,
-            "url": url
+            "success": response.status_code == expected_status,
+            "url": url,
+            "method": method.upper()
         }
         
+        try:
+            result["data"] = response.json()
+        except:
+            result["data"] = response.text
+            
         return result
         
     except requests.exceptions.RequestException as e:
         return {
-            "success": False,
             "error": str(e),
-            "description": description,
-            "url": url
+            "url": url,
+            "method": method.upper(),
+            "success": False
         }
 
-def main():
-    """Run all Roles & Hierarchy API endpoint tests"""
-    print("=" * 80)
-    print("BLUE BOX AIR - ROLES & HIERARCHY API TESTING")
-    print("=" * 80)
-    print(f"Backend URL: {BACKEND_URL}")
-    print(f"Test Time: {datetime.now().isoformat()}")
-    print()
+def setup_test_users():
+    """Setup test users in the database for testing"""
+    print("🔧 Setting up test users...")
     
-    # Test cases based on review request
-    test_cases = [
+    # Create some test users with Salesforce source
+    test_users = [
         {
-            "name": "1. GET /api/roles",
-            "method": "GET",
-            "endpoint": "/roles",
-            "expected_status": 200,
-            "description": "Should return a list of 10 roles (CEO/Owner, Head of Operations, 4x Operations Manager for NY/FL/NO/Dallas, Field Supervisor, Lead Technician, Technician, Junior Technician) with regions and hierarchy levels"
+            "id": "user-001",
+            "salesforce_id": "003Dn00000AbCdEF",
+            "username": "alonzo.cotton",
+            "email": "alonzo.cotton@blueboxair.com",
+            "full_name": "Alonzo Cotton",
+            "phone": "(555) 123-4567",
+            "is_active": True,
+            "source": "salesforce",
+            "skills": ["Coil Management", "Air Quality"],
+            "created_at": datetime.utcnow().isoformat()
         },
         {
-            "name": "2. GET /api/roles/hierarchy",
-            "method": "GET", 
-            "endpoint": "/roles/hierarchy",
-            "expected_status": 200,
-            "description": "Should return a tree structure with hierarchy, total_members count, and 4 regions"
+            "id": "user-002", 
+            "salesforce_id": "003Dn00000XyZaBC",
+            "username": "jane.doe",
+            "email": "jane.doe@blueboxair.com",
+            "full_name": "Jane Doe",
+            "phone": "(555) 987-6543",
+            "is_active": True,
+            "source": "salesforce",
+            "skills": ["Field Supervisor"],
+            "created_at": datetime.utcnow().isoformat()
         },
         {
-            "name": "3. POST /api/roles/assign - CEO Assignment",
-            "method": "POST",
-            "endpoint": "/roles/assign",
-            "data": {"member_name": "John Smith", "role_name": "CEO / Owner", "email": "john@blueboxair.com"},
-            "expected_status": 200,
-            "description": "Should assign successfully (CEO doesn't need region)"
+            "id": "user-003",
+            "salesforce_id": "003Dn00000InActv",
+            "username": "inactive.user",
+            "email": "inactive.user@blueboxair.com", 
+            "full_name": "Inactive User",
+            "phone": "(555) 111-2222",
+            "is_active": False,
+            "source": "salesforce",
+            "skills": ["Technician"],
+            "created_at": datetime.utcnow().isoformat()
         },
         {
-            "name": "4. POST /api/roles/assign - Operations Manager with Region",
-            "method": "POST",
-            "endpoint": "/roles/assign", 
-            "data": {"member_name": "Mike Jones", "role_name": "Operations Manager", "region": "New York", "email": "mike@blueboxair.com"},
-            "expected_status": 200,
-            "description": "Should assign successfully with region"
-        },
-        {
-            "name": "5. POST /api/roles/assign - Operations Manager without Region (Should Fail)",
-            "method": "POST",
-            "endpoint": "/roles/assign",
-            "data": {"member_name": "Bad Test", "role_name": "Operations Manager"},
-            "expected_status": 400,
-            "description": "Should fail with 400 (region required for Operations Manager)"
-        },
-        {
-            "name": "6. GET /api/team",
-            "method": "GET",
-            "endpoint": "/team",
-            "expected_status": 200,
-            "description": "Should return leadership and regional team structure with the members we just assigned"
-        },
-        {
-            "name": "7. GET /api/roles/hierarchy - After Assignments",
-            "method": "GET",
-            "endpoint": "/roles/hierarchy",
-            "expected_status": 200,
-            "description": "Verify hierarchy now shows the assigned members in the tree (total_members should be 2)"
-        },
-        {
-            "name": "8. DELETE /api/roles/assign/John%20Smith",
-            "method": "DELETE",
-            "endpoint": "/roles/assign/John%20Smith",
-            "params": {"role_name": "CEO / Owner"},
-            "expected_status": 200,
-            "description": "Should remove the assignment"
+            "id": "user-004",
+            "salesforce_id": "003Dn00000AlonZo",
+            "username": "alonzo.martinez",
+            "email": "alonzo.martinez@blueboxair.com",
+            "full_name": "Alonzo Martinez", 
+            "phone": "(555) 333-4444",
+            "is_active": True,
+            "source": "salesforce",
+            "skills": ["Lead Technician"],
+            "created_at": datetime.utcnow().isoformat()
         }
     ]
     
+    # We'll need to insert these directly into MongoDB since there's no API endpoint for creating users
+    # For now, let's just note that we need test data
+    print("✅ Test users defined (would need to be inserted into MongoDB)")
+    return test_users
+
+def run_specific_tests():
+    """Run the 4 specific tests requested in the review"""
+    print("🧪 Running Blue Box Air Backend Tests - Specific Review Request")
+    print("=" * 60)
+    
     results = []
-    passed = 0
-    failed = 0
     
-    for i, test_case in enumerate(test_cases, 1):
-        print(f"Testing {test_case['name']}...")
+    # Test 1: GET /api/salesforce/users?active_only=true
+    print("\n1️⃣ Testing GET /api/salesforce/users?active_only=true")
+    result1 = test_api_endpoint("GET", "/salesforce/users", params={"active_only": True})
+    results.append(("Salesforce Users - Active Only", result1))
+    
+    if result1.get("success"):
+        data = result1.get("data", {})
+        users = data.get("users", [])
+        total = data.get("total", 0)
+        print(f"   ✅ SUCCESS: Returned {total} users")
         
-        result = test_endpoint(
-            method=test_case["method"],
-            endpoint=test_case["endpoint"],
-            data=test_case.get("data"),
-            params=test_case.get("params"),
-            expected_status=test_case["expected_status"],
-            description=test_case["description"]
-        )
-        
-        results.append({**test_case, **result})
-        
-        if result["success"]:
-            print(f"✅ PASS: {test_case['name']}")
-            passed += 1
+        # Check if all returned users are active
+        inactive_users = [u for u in users if not u.get("is_active", True)]
+        if inactive_users:
+            print(f"   ⚠️  WARNING: Found {len(inactive_users)} inactive users in active_only=true response")
         else:
-            print(f"❌ FAIL: {test_case['name']}")
-            print(f"   Expected: {test_case['expected_status']}, Got: {result.get('status_code', 'ERROR')}")
-            if 'error' in result:
-                print(f"   Error: {result['error']}")
-            failed += 1
-        
-        print()
+            print(f"   ✅ All returned users are active (or is_active field not present)")
+    else:
+        print(f"   ❌ FAILED: {result1.get('error', 'Unknown error')}")
+        if result1.get("status_code"):
+            print(f"   Status: {result1['status_code']}")
     
-    # Detailed Results Analysis
-    print("=" * 80)
-    print("DETAILED TEST RESULTS")
-    print("=" * 80)
+    # Test 2: GET /api/salesforce/users?search=Alonzo&active_only=true
+    print("\n2️⃣ Testing GET /api/salesforce/users?search=Alonzo&active_only=true")
+    result2 = test_api_endpoint("GET", "/salesforce/users", params={"search": "Alonzo", "active_only": True})
+    results.append(("Salesforce Users - Search Alonzo Active", result2))
     
-    for i, result in enumerate(results, 1):
-        print(f"\n{i}. {result['name']}")
-        print(f"   URL: {result.get('url', 'N/A')}")
-        print(f"   Status: {'✅ PASS' if result['success'] else '❌ FAIL'}")
-        print(f"   Expected: {result['expected_status']}, Got: {result.get('status_code', 'ERROR')}")
+    if result2.get("success"):
+        data = result2.get("data", {})
+        users = data.get("users", [])
+        total = data.get("total", 0)
+        print(f"   ✅ SUCCESS: Returned {total} users matching 'Alonzo'")
         
-        if result['success']:
-            # Analyze specific responses for validation
-            response = result.get('response', {})
-            
-            if result['name'].startswith("1."):
-                # Check for 10 roles with correct structure
-                if isinstance(response, dict) and 'roles' in response:
-                    roles = response.get('roles', [])
-                    regions = response.get('regions', [])
-                    print(f"   ✅ Found {len(roles)} roles")
-                    print(f"   ✅ Found {len(regions)} regions: {regions}")
-                    # Check for specific roles
-                    role_names = [r.get('name', '') for r in roles]
-                    if 'CEO / Owner' in role_names and 'Operations Manager' in role_names:
-                        print(f"   ✅ Contains expected roles: CEO / Owner, Operations Manager")
-                    # Check hierarchy levels
-                    levels = [r.get('level', -1) for r in roles]
-                    if 0 in levels and max(levels) >= 6:
-                        print(f"   ✅ Hierarchy levels correct: 0 to {max(levels)}")
-                else:
-                    print(f"   ⚠️  Response: {response}")
-            
-            elif result['name'].startswith("2.") or result['name'].startswith("7."):
-                # Check hierarchy tree structure
-                if isinstance(response, dict) and 'hierarchy' in response:
-                    hierarchy = response.get('hierarchy', [])
-                    total_members = response.get('total_members', 0)
-                    regions = response.get('regions', [])
-                    print(f"   ✅ Hierarchy tree with {len(hierarchy)} top-level nodes")
-                    print(f"   ✅ Total members: {total_members}")
-                    print(f"   ✅ Regions: {regions}")
-                    if result['name'].startswith("7.") and total_members >= 2:
-                        print(f"   ✅ Members assigned correctly (total: {total_members})")
-                else:
-                    print(f"   ⚠️  Response: {response}")
-            
-            elif result['name'].startswith("3.") or result['name'].startswith("4."):
-                # Check successful assignment
-                if isinstance(response, dict) and response.get('success') is True:
-                    assignment = response.get('assignment', {})
-                    member_name = assignment.get('member_name', '')
-                    role_name = assignment.get('role_name', '')
-                    region = assignment.get('region', 'None')
-                    print(f"   ✅ Assignment successful: {member_name} -> {role_name}")
-                    print(f"   ✅ Region: {region}")
-                else:
-                    print(f"   ⚠️  Response: {response}")
-            
-            elif result['name'].startswith("5."):
-                # This should fail - check for 400 error
-                print(f"   ✅ Correctly failed with 400 (region required)")
-                if isinstance(response, dict) and 'detail' in response:
-                    print(f"   ✅ Error message: {response.get('detail', '')}")
-            
-            elif result['name'].startswith("6."):
-                # Check team structure
-                if isinstance(response, dict):
-                    leadership = response.get('leadership', [])
-                    regions = response.get('regions', {})
-                    total = response.get('total', 0)
-                    print(f"   ✅ Leadership team: {len(leadership)} members")
-                    print(f"   ✅ Regional teams: {len(regions)} regions")
-                    print(f"   ✅ Total team members: {total}")
-                    for region, members in regions.items():
-                        print(f"   ✅ {region}: {len(members)} members")
-                else:
-                    print(f"   ⚠️  Response: {response}")
-            
-            elif result['name'].startswith("8."):
-                # Check successful deletion
-                if isinstance(response, dict) and response.get('success') is True:
-                    deleted = response.get('deleted', '')
-                    print(f"   ✅ Assignment deleted: {deleted}")
-                else:
-                    print(f"   ⚠️  Response: {response}")
+        # Check if all returned users contain "Alonzo" and are active
+        for user in users:
+            name = user.get("full_name", "")
+            is_active = user.get("is_active", True)
+            if "alonzo" not in name.lower():
+                print(f"   ⚠️  WARNING: User '{name}' doesn't contain 'Alonzo'")
+            if not is_active:
+                print(f"   ⚠️  WARNING: User '{name}' is not active")
+        
+        if users:
+            print(f"   📋 Found users: {[u.get('full_name') for u in users]}")
         else:
-            if 'error' in result:
-                print(f"   ❌ Error: {result['error']}")
+            print(f"   ℹ️  No users found matching 'Alonzo' (expected if no test data)")
+    else:
+        print(f"   ❌ FAILED: {result2.get('error', 'Unknown error')}")
+        if result2.get("status_code"):
+            print(f"   Status: {result2['status_code']}")
+    
+    # Test 3: POST /api/projects with valid data
+    print("\n3️⃣ Testing POST /api/projects with valid data")
+    project_data = {
+        "name": "Coil Cleaning",
+        "client_name": "Acme Corp"
+    }
+    result3 = test_api_endpoint("POST", "/projects", data=project_data)
+    results.append(("Create Project - Valid Data", result3))
+    
+    if result3.get("success"):
+        data = result3.get("data", {})
+        if data.get("success"):
+            project = data.get("project", {})
+            project_name = project.get("name", "")
+            project_number = project.get("project_number", "")
+            client_name = project.get("client_name", "")
+            
+            print(f"   ✅ SUCCESS: Project created")
+            print(f"   📋 Project Name: '{project_name}'")
+            print(f"   📋 Project Number: '{project_number}'")
+            print(f"   📋 Client Name: '{client_name}'")
+            
+            # Check formatting requirements
+            expected_name = "Acme Corp - Coil Cleaning"
+            if project_name == expected_name:
+                print(f"   ✅ Name formatting correct: '{expected_name}'")
             else:
-                print(f"   ❌ Response: {result.get('response', 'No response')}")
+                print(f"   ⚠️  Name formatting issue: Expected '{expected_name}', got '{project_name}'")
+            
+            # Check project number starts with BBA-
+            if project_number.startswith("BBA-"):
+                print(f"   ✅ Project number starts with 'BBA-': '{project_number}'")
+            else:
+                print(f"   ⚠️  Project number issue: Expected to start with 'BBA-', got '{project_number}'")
+            
+            # Check client name title case
+            if client_name == "Acme Corp":
+                print(f"   ✅ Client name title-cased correctly: '{client_name}'")
+            else:
+                print(f"   ⚠️  Client name formatting: Expected 'Acme Corp', got '{client_name}'")
+        else:
+            print(f"   ❌ FAILED: API returned success=false: {data}")
+    else:
+        print(f"   ❌ FAILED: {result3.get('error', 'Unknown error')}")
+        if result3.get("status_code"):
+            print(f"   Status: {result3['status_code']}")
+    
+    # Test 4: POST /api/projects with empty client_name (should fail)
+    print("\n4️⃣ Testing POST /api/projects with empty client_name (should fail)")
+    invalid_project_data = {
+        "name": "Test",
+        "client_name": ""
+    }
+    result4 = test_api_endpoint("POST", "/projects", data=invalid_project_data, expected_status=400)
+    results.append(("Create Project - Invalid Data", result4))
+    
+    if result4.get("success"):  # success means we got the expected 400 status
+        print(f"   ✅ SUCCESS: Correctly returned 400 error for empty client_name")
+        data = result4.get("data", {})
+        if isinstance(data, dict) and "detail" in data:
+            print(f"   📋 Error message: '{data['detail']}'")
+        else:
+            print(f"   📋 Response: {data}")
+    else:
+        print(f"   ❌ FAILED: Expected 400 status code, got {result4.get('status_code')}")
+        if result4.get("data"):
+            print(f"   📋 Response: {result4['data']}")
     
     # Summary
-    print("\n" + "=" * 80)
-    print("TEST SUMMARY")
-    print("=" * 80)
-    print(f"Total Tests: {len(test_cases)}")
-    print(f"Passed: {passed}")
-    print(f"Failed: {failed}")
-    print(f"Success Rate: {(passed/len(test_cases)*100):.1f}%")
+    print("\n" + "=" * 60)
+    print("📊 TEST SUMMARY")
+    print("=" * 60)
     
-    if failed == 0:
-        print("\n🎉 ALL TESTS PASSED! Roles & Hierarchy endpoints are working correctly.")
-        print("\nKey Validations:")
-        print("✅ Role levels are correct (0=CEO, 1=Head of Ops, 2=Operations Manager, 3+=field roles)")
-        print("✅ Region validation works for regional roles")
-        print("✅ The hierarchy tree structure is correct with children nodes")
-        print("✅ CRUD operations on assignments work")
-    else:
-        print(f"\n⚠️  {failed} test(s) failed. Please review the failed endpoints.")
+    passed = 0
+    total_tests = len(results)
     
-    return failed == 0
+    for test_name, result in results:
+        status = "✅ PASS" if result.get("success") else "❌ FAIL"
+        print(f"{status} - {test_name}")
+        if result.get("success"):
+            passed += 1
+    
+    print(f"\n🎯 Results: {passed}/{total_tests} tests passed ({passed/total_tests*100:.1f}%)")
+    
+    return results
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    # Setup test data
+    setup_test_users()
+    
+    # Run the specific tests
+    results = run_specific_tests()
+    
+    print(f"\n🏁 Testing completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

@@ -90,6 +90,10 @@ export default function TeamScreen() {
   const [selectedRole, setSelectedRole] = useState<string>('');
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [showRegionPicker, setShowRegionPicker] = useState(false);
+  const [sfUsers, setSfUsers] = useState<any[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [showUserPicker, setShowUserPicker] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   useEffect(() => {
     loadHierarchy();
@@ -114,6 +118,36 @@ export default function TeamScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const searchSfUsers = async (query: string) => {
+    setUserSearch(query);
+    if (query.length < 2) {
+      setSfUsers([]);
+      return;
+    }
+    setLoadingUsers(true);
+    try {
+      const res = await fetch(`${API_URL}/api/salesforce/users?active_only=true&search=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      setSfUsers(data.users || []);
+      setShowUserPicker(true);
+    } catch (error) {
+      console.error('Search users error:', error);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const selectUser = (user: any) => {
+    setAssignForm({
+      ...assignForm,
+      member_name: user.full_name || user.name || '',
+      email: user.email || '',
+      phone: user.phone || user.mobile_phone || '',
+    });
+    setShowUserPicker(false);
+    setUserSearch(user.full_name || user.name || '');
   };
 
   const toggleRegion = (region: string) => {
@@ -356,15 +390,60 @@ export default function TeamScreen() {
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Name */}
-              <Text style={styles.fieldLabel}>Team Member Name *</Text>
+              {/* Search Salesforce User */}
+              <Text style={styles.fieldLabel}>Team Member (Search Salesforce Users) *</Text>
               <TextInput
                 style={styles.input}
-                value={assignForm.member_name}
-                onChangeText={t => setAssignForm({ ...assignForm, member_name: t })}
-                placeholder="Enter full name"
+                value={userSearch}
+                onChangeText={searchSfUsers}
+                placeholder="Type 2+ letters to search active users..."
                 placeholderTextColor={COLORS.grayDark}
               />
+              {loadingUsers && (
+                <ActivityIndicator size="small" color={COLORS.lime} style={{ marginTop: 8 }} />
+              )}
+              {showUserPicker && sfUsers.length > 0 && (
+                <ScrollView style={styles.pickerDropdown} nestedScrollEnabled>
+                  {sfUsers.slice(0, 15).map((user: any, idx: number) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={styles.pickerOption}
+                      onPress={() => selectUser(user)}
+                    >
+                      <View style={[styles.memberAvatar, { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.lime + '20' }]}>
+                        <Text style={[styles.memberInitial, { fontSize: 12, color: COLORS.lime }]}>
+                          {(user.full_name || '?').charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.pickerOptionText}>{user.full_name}</Text>
+                        <Text style={{ fontSize: 10, color: COLORS.grayDark }}>
+                          {[user.title, user.role, user.email].filter(Boolean).join(' · ')}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+              {showUserPicker && sfUsers.length === 0 && userSearch.length >= 2 && !loadingUsers && (
+                <Text style={{ color: COLORS.grayDark, fontSize: 12, marginTop: 8 }}>No active users found for "{userSearch}"</Text>
+              )}
+              {assignForm.member_name ? (
+                <View style={[styles.memberCard, { marginTop: 8, marginLeft: 0 }]}>
+                  <View style={[styles.memberAvatar, { backgroundColor: COLORS.lime + '25' }]}>
+                    <Text style={[styles.memberInitial, { color: COLORS.lime }]}>
+                      {assignForm.member_name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberName}>{assignForm.member_name}</Text>
+                    {assignForm.email ? <Text style={styles.memberEmail}>{assignForm.email}</Text> : null}
+                  </View>
+                  <TouchableOpacity onPress={() => { setAssignForm({...assignForm, member_name: '', email: '', phone: ''}); setUserSearch(''); }}>
+                    <Ionicons name="close-circle" size={20} color={COLORS.red} />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
 
               {/* Role Picker */}
               <Text style={styles.fieldLabel}>Role *</Text>

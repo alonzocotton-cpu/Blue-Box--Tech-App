@@ -322,9 +322,12 @@ export default function ProjectsScreen() {
                   style={styles.modalInput}
                   value={newProject.name}
                   onChangeText={(text) => setNewProject({ ...newProject, name: text })}
-                  placeholder="e.g., Acme Tower - Coil Cleaning"
+                  placeholder="e.g., Coil Cleaning, Air Quality Assessment"
                   placeholderTextColor={COLORS.grayDark}
                 />
+                <Text style={{ fontSize: 11, color: COLORS.grayDark, marginTop: 4 }}>
+                  Format: "Client Name - Service Type" (auto-formatted)
+                </Text>
               </View>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Client Name *</Text>
