@@ -393,46 +393,49 @@ async def login(credentials: TechnicianLogin):
 @api_router.get("/auth/salesforce/init")
 async def salesforce_oauth_init(redirect_uri: str = ""):
     """Initialize Salesforce OAuth flow - returns the authorization URL"""
-    if not get_sf_config()["client_id"]:
+    sf = get_sf_config()
+    if not sf["client_id"]:
         raise HTTPException(status_code=500, detail="Salesforce not configured")
     
-    callback_url = get_sf_config()["redirect_uri"] or f"{get_sf_config()["app_url"]}/api/auth/salesforce/callback"
+    callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
     params = {
         "response_type": "code",
-        "client_id": get_sf_config()["client_id"],
+        "client_id": sf["client_id"],
         "redirect_uri": callback_url,
         "scope": "api refresh_token openid profile",
         "state": redirect_uri or "app",
     }
     
-    auth_url = f"{get_sf_config()["login_url"]}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
+    auth_url = f"{sf['login_url']}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
     
     return {"auth_url": auth_url, "callback_url": callback_url}
 
 @api_router.get("/auth/salesforce/redirect")
 async def salesforce_oauth_redirect():
     """Redirect user to Salesforce login page (browser-based flow)"""
-    if not get_sf_config()["client_id"]:
+    sf = get_sf_config()
+    if not sf["client_id"]:
         raise HTTPException(status_code=500, detail="Salesforce not configured")
     
-    callback_url = get_sf_config()["redirect_uri"] or f"{get_sf_config()["app_url"]}/api/auth/salesforce/callback"
+    callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
     params = {
         "response_type": "code",
-        "client_id": get_sf_config()["client_id"],
+        "client_id": sf["client_id"],
         "redirect_uri": callback_url,
         "scope": "api refresh_token openid profile",
         "state": "browser_flow",
     }
     
-    auth_url = f"{get_sf_config()["login_url"]}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
+    auth_url = f"{sf['login_url']}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
     return RedirectResponse(url=auth_url)
 
 @api_router.get("/auth/salesforce/callback")
 async def salesforce_oauth_callback(code: str = "", state: str = "app", error: str = "", error_description: str = ""):
     """Handle Salesforce OAuth callback"""
-    frontend_url = get_sf_config()["redirect_uri"].replace("/api/auth/salesforce/callback", "") if get_sf_config()["redirect_uri"] else get_sf_config()["app_url"]
+    sf = get_sf_config()
+    frontend_url = sf["redirect_uri"].replace("/api/auth/salesforce/callback", "") if sf["redirect_uri"] else sf["app_url"]
     
     if error:
         # Redirect to frontend with error
@@ -441,18 +444,18 @@ async def salesforce_oauth_callback(code: str = "", state: str = "app", error: s
     if not code:
         raise HTTPException(status_code=400, detail="No authorization code received")
     
-    callback_url = get_sf_config()["redirect_uri"] or f"{get_sf_config()["app_url"]}/api/auth/salesforce/callback"
+    callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
     try:
         async with httpx.AsyncClient() as client_http:
             # Exchange code for tokens
             token_response = await client_http.post(
-                f"{get_sf_config()["login_url"]}/services/oauth2/token",
+                f"{sf['login_url']}/services/oauth2/token",
                 data={
                     "grant_type": "authorization_code",
                     "code": code,
-                    "client_id": get_sf_config()["client_id"],
-                    "client_secret": get_sf_config()["client_secret"],
+                    "client_id": sf["client_id"],
+                    "client_secret": sf["client_secret"],
                     "redirect_uri": callback_url,
                 },
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -539,10 +542,11 @@ async def explore_salesforce_objects(token: str = ""):
     instance_url = session.get("instance_url")
     
     try:
+        sf = get_sf_config()
         async with httpx.AsyncClient() as client_http:
             # Get global describe to see available objects
             describe_response = await client_http.get(
-                f"{instance_url}/services/data/{get_sf_config()["api_version"]}/sobjects/",
+                f"{instance_url}/services/data/{sf['api_version']}/sobjects/",
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=15.0,
             )
@@ -698,20 +702,7 @@ async def salesforce_auth_url():
         }
     return {"auth_url": sf_config.auth_url}
 
-@api_router.get("/auth/salesforce/callback")
-async def salesforce_callback(code: str = Query(...)):
-    """Handle Salesforce OAuth callback after user authorization."""
-    result = await salesforce.authenticate_with_code(code)
-    if result:
-        return {
-            "success": True,
-            "message": "Salesforce authentication successful",
-            "user_info": result.get("user_info"),
-        }
-    return {
-        "success": False,
-        "message": "Salesforce authentication failed",
-    }
+# Note: /auth/salesforce/callback is already defined above with full Authorization Code Flow handling
 
 @api_router.get("/salesforce/field-mappings")
 async def get_field_mappings():

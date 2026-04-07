@@ -269,6 +269,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: GET /api/auth/salesforce/init returns auth_url containing 'login.salesforce.com/services/oauth2/authorize' with client_id parameter. OAuth init working correctly."
+      - working: true
+        agent: "main"
+        comment: "Fixed Python 3.11 f-string syntax errors. Retested: returns 200 with correct auth_url. Confirmed working."
 
   - task: "Salesforce OAuth Callback API"
     implemented: true
@@ -284,6 +287,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: GET /api/auth/salesforce/callback with error=access_denied returns success=False, error=access_denied. GET /api/auth/salesforce/callback without code returns 400 error. Error handling working correctly."
+      - working: true
+        agent: "main"
+        comment: "Fixed Python 3.11 f-string syntax errors. Removed duplicate route. Retested: 400 for missing code works, error redirect works. Confirmed working."
 
   - task: "Projects Creation API"
     implemented: true
@@ -457,3 +463,5 @@ agent_communication:
     message: "✅ SALESFORCE OAUTH INTEGRATION TESTING COMPLETE: All 7 requested Salesforce OAuth endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/auth/login with test credentials correctly falls through to mock login (success=true, source=mock). 2) GET /api/auth/salesforce/init returns proper auth_url with login.salesforce.com/services/oauth2/authorize and client_id. 3) GET /api/auth/salesforce/callback with error=access_denied correctly returns success=false, error=access_denied. 4) GET /api/auth/salesforce/callback without code correctly returns 400 error. 5) GET /api/projects returns 3 mock projects + custom projects with all required fields. 6) POST /api/projects successfully creates new project with name='Test Project', client_name='Test Client'. 7) GET /api/dashboard/stats returns all required fields including units_serviced. Salesforce OAuth integration working correctly, mock login fallback functional, existing endpoints not broken."
   - agent: "testing"
     message: "✅ REPORTS API TESTING COMPLETE: All 5 requested reports endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/reports/proj-001 returns complete report with James Wilson primary contact (+1 (212) 555-0147), 4 equipment reports, and summary stats (11 total readings, 1 photo). 2) GET /api/reports/proj-002 returns Metro Hospital report with Dr. Sarah Mitchell primary contact (+1 (312) 555-0289). 3) GET /api/reports/nonexistent correctly returns 404 for non-existent projects. 4) GET /api/projects returns 4 projects including custom MongoDB projects. 5) POST /api/projects + GET /api/reports/{new_id} successfully creates custom project 'Test Report Project' with John Doe contact and generates complete report. All reports contain required structure: project details, primary_contact field, equipment_reports array, and summary statistics. Custom projects from MongoDB also generate reports correctly."
+  - agent: "main"
+    message: "Fixed critical Python 3.11 syntax errors in server.py. The issue was nested double quotes inside f-strings (e.g., f\"{get_sf_config()[\"key\"]}\") which is not supported in Python 3.11. Fixed by storing sf = get_sf_config() in local variable and using sf['key'] with single quotes in f-strings. Also removed duplicate /auth/salesforce/callback route definition. Backend is now running. Please retest the Salesforce OAuth endpoints (init, callback, redirect) and all previously working endpoints to confirm no regressions."
