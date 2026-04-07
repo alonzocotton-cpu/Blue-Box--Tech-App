@@ -861,6 +861,18 @@ async def get_synced_users(active_only: bool = True, search: str = ""):
 
 REGIONS = ["New York", "Florida", "New Orleans", "Dallas"]
 
+LINES_OF_BUSINESS = [
+    {"code": "AS", "name": "Automation", "color": "#3b82f6"},
+    {"code": "SS", "name": "Self Service", "color": "#22c55e"},
+    {"code": "DS", "name": "Direct Service", "color": "#f59e0b"},
+]
+LOB_CODES = {lob["code"]: lob for lob in LINES_OF_BUSINESS}
+
+@api_router.get("/lines-of-business")
+async def get_lines_of_business():
+    """Get all lines of business"""
+    return {"lines_of_business": LINES_OF_BUSINESS}
+
 DEFAULT_ROLES = [
     {"name": "CEO / Owner", "level": 0, "parent": None, "region": None, "color": "#f59e0b", "icon": "star"},
     {"name": "Head of Operations", "level": 1, "parent": "CEO / Owner", "region": None, "color": "#8b5cf6", "icon": "briefcase"},
@@ -1204,11 +1216,14 @@ async def create_project(data: dict = Body(...)):
     # Enforce naming convention: "Client Name - Service Description"
     client_name = data.get("client_name", "").strip()
     project_name = data.get("name", "").strip()
+    lob_code = data.get("line_of_business", "").strip().upper()
     
     if not client_name:
         raise HTTPException(status_code=400, detail="Client name is required")
     if not project_name:
         raise HTTPException(status_code=400, detail="Project name is required")
+    if lob_code and lob_code not in LOB_CODES:
+        raise HTTPException(status_code=400, detail=f"Invalid line of business. Use: AS, SS, or DS")
     
     # Auto-format project name if it doesn't already include client name
     if client_name.lower() not in project_name.lower():
@@ -1219,15 +1234,24 @@ async def create_project(data: dict = Body(...)):
     # Title case the formatted name
     formatted_name = formatted_name.title()
     
+    # Project number with LOB code: BBA-DS-202604-XXXX
+    lob_prefix = f"-{lob_code}" if lob_code else ""
+    project_number = f"BBA{lob_prefix}-{now.strftime('%Y%m')}-{project_id[-4:]}"
+    
+    lob_info = LOB_CODES.get(lob_code, {})
+    
     new_project = {
         "id": project_id,
         "salesforce_id": None,
-        "project_number": f"BBA-{now.strftime('%Y%m')}-{project_id[-4:]}",
+        "project_number": project_number,
         "name": formatted_name,
         "description": data.get("description", ""),
         "status": data.get("status", "Active"),
         "client_name": client_name.title(),
         "address": data.get("address", ""),
+        "line_of_business": lob_code,
+        "lob_name": lob_info.get("name", ""),
+        "lob_color": lob_info.get("color", ""),
         "start_date": data.get("start_date", now.isoformat()),
         "end_date": data.get("end_date", (now + timedelta(days=30)).isoformat()),
         "assigned_technician_id": data.get("assigned_technician_id", "tech-001"),

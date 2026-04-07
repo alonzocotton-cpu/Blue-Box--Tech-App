@@ -45,9 +45,18 @@ interface Project {
   start_date?: string;
   end_date?: string;
   equipment_count: number;
+  line_of_business?: string;
+  lob_name?: string;
+  lob_color?: string;
 }
 
 const STATUS_FILTERS = ['All', 'Active', 'On Hold', 'Completed'];
+const LOB_FILTERS = [
+  { code: 'All', name: 'All LOBs', color: '#94a3b8' },
+  { code: 'AS', name: 'Automation', color: '#3b82f6' },
+  { code: 'SS', name: 'Self Service', color: '#22c55e' },
+  { code: 'DS', name: 'Direct Service', color: '#f59e0b' },
+];
 
 export default function ProjectsScreen() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -55,6 +64,7 @@ export default function ProjectsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('All');
+  const [selectedLob, setSelectedLob] = useState('All');
   const [technician, setTechnician] = useState<any>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -63,6 +73,7 @@ export default function ProjectsScreen() {
     client_name: '',
     address: '',
     description: '',
+    line_of_business: '',
     contact_name: '',
     contact_title: '',
     contact_phone: '',
@@ -93,12 +104,15 @@ export default function ProjectsScreen() {
   }, []);
 
   useEffect(() => {
-    if (selectedFilter === 'All') {
-      setFilteredProjects(projects);
-    } else {
-      setFilteredProjects(projects.filter(p => p.status === selectedFilter));
+    let filtered = projects;
+    if (selectedFilter !== 'All') {
+      filtered = filtered.filter(p => p.status === selectedFilter);
     }
-  }, [selectedFilter, projects]);
+    if (selectedLob !== 'All') {
+      filtered = filtered.filter(p => p.line_of_business === selectedLob);
+    }
+    setFilteredProjects(filtered);
+  }, [selectedFilter, selectedLob, projects]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -112,6 +126,10 @@ export default function ProjectsScreen() {
     }
     if (!newProject.client_name.trim()) {
       Alert.alert('Required', 'Client name is required');
+      return;
+    }
+    if (!newProject.line_of_business) {
+      Alert.alert('Required', 'Please select a Line of Business (AS, SS, or DS)');
       return;
     }
 
@@ -130,13 +148,14 @@ export default function ProjectsScreen() {
           client_name: '',
           address: '',
           description: '',
+          line_of_business: '',
           contact_name: '',
           contact_title: '',
           contact_phone: '',
           contact_email: '',
         });
         fetchProjects();
-        Alert.alert('Success', 'Project created successfully!');
+        Alert.alert('Success', `Project created: ${data.project?.name}\n#${data.project?.project_number}`);
       }
     } catch (error) {
       console.error('Error creating project:', error);
@@ -178,6 +197,13 @@ export default function ProjectsScreen() {
       <View style={styles.clientRow}>
         <Ionicons name="business-outline" size={16} color={COLORS.gray} />
         <Text style={styles.clientName}>{item.client_name}</Text>
+        {item.line_of_business ? (
+          <View style={[styles.lobBadge, { backgroundColor: (item.lob_color || '#94a3b8') + '20' }]}>
+            <Text style={[styles.lobBadgeText, { color: item.lob_color || '#94a3b8' }]}>
+              {item.line_of_business}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {item.address && (
@@ -258,6 +284,30 @@ export default function ProjectsScreen() {
             </TouchableOpacity>
           )}
         />
+      </View>
+
+      {/* LOB Filter */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          {LOB_FILTERS.map(lob => (
+            <TouchableOpacity
+              key={lob.code}
+              onPress={() => setSelectedLob(lob.code)}
+              style={[
+                styles.lobFilterTab,
+                selectedLob === lob.code && { backgroundColor: lob.color + '25', borderColor: lob.color },
+              ]}
+            >
+              <View style={[styles.lobFilterDot, { backgroundColor: lob.color }]} />
+              <Text style={[
+                styles.lobFilterText,
+                selectedLob === lob.code && { color: lob.color },
+              ]}>
+                {lob.code === 'All' ? 'All' : lob.code}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Projects List */}
@@ -348,6 +398,29 @@ export default function ProjectsScreen() {
                   placeholder="e.g., 123 Main St, City, State"
                   placeholderTextColor={COLORS.grayDark}
                 />
+              </View>
+              <View style={styles.modalField}>
+                <Text style={styles.modalLabel}>Line of Business *</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                  {LOB_FILTERS.filter(l => l.code !== 'All').map(lob => (
+                    <TouchableOpacity
+                      key={lob.code}
+                      onPress={() => setNewProject({ ...newProject, line_of_business: lob.code })}
+                      style={[
+                        styles.lobSelectBtn,
+                        newProject.line_of_business === lob.code && { backgroundColor: lob.color + '25', borderColor: lob.color },
+                      ]}
+                    >
+                      <View style={[styles.lobFilterDot, { backgroundColor: lob.color }]} />
+                      <Text style={[
+                        styles.lobSelectText,
+                        newProject.line_of_business === lob.code && { color: lob.color, fontWeight: '700' },
+                      ]}>
+                        {lob.code} - {lob.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Description</Text>
@@ -680,5 +753,53 @@ const styles = StyleSheet.create({
   modalTextArea: {
     minHeight: 80,
     paddingTop: 14,
+  },
+  lobBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 'auto',
+  },
+  lobBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  lobFilterTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+    backgroundColor: COLORS.navyMid,
+  },
+  lobFilterDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  lobFilterText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+  lobSelectBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+    backgroundColor: COLORS.navyMid,
+  },
+  lobSelectText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '500',
   },
 });
