@@ -76,17 +76,11 @@ export default function ProfileScreen() {
   const [activeProfileTab, setActiveProfileTab] = useState<'profile' | 'resources'>('profile');
   const [expandedResource, setExpandedResource] = useState<string | null>(null);
   const [serviceStats, setServiceStats] = useState({ units_serviced: 0, total_readings: 0 });
-  const [syncing, setSyncing] = useState(false);
-  const [syncingAll, setSyncingAll] = useState(false);
-  const [removingInactive, setRemovingInactive] = useState(false);
-  const [teamUsers, setTeamUsers] = useState<any[]>([]);
-  const [showTeam, setShowTeam] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     loadProfile();
     loadServiceStats();
-    loadSyncedUsers();
   }, []);
 
   // Check admin status when technician data loads
@@ -177,100 +171,7 @@ export default function ProfileScreen() {
     }
   };
 
-  const syncMyProfile = async () => {
-    setSyncing(true);
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        Alert.alert('Not Connected', 'Please log in with Salesforce first to sync your profile.');
-        return;
-      }
-      const response = await fetch(`${API_URL}/api/salesforce/sync-profile?token=${encodeURIComponent(token)}`);
-      const data = await response.json();
-      if (data.success && data.profile) {
-        const merged = { ...technician, ...data.profile, skills: technician?.skills || data.profile.skills || [] };
-        setTechnician(merged);
-        await AsyncStorage.setItem('technician', JSON.stringify(merged));
-        if (data.profile.profile_photo) setProfilePhoto(data.profile.profile_photo);
-        Alert.alert('Synced!', `Profile updated from Salesforce.\nRole: ${data.profile.role || 'N/A'}\nTitle: ${data.profile.title || 'N/A'}`);
-      } else {
-        Alert.alert('Sync Failed', data.error || 'Could not sync profile from Salesforce.');
-      }
-    } catch (error) {
-      console.error('Sync profile error:', error);
-      Alert.alert('Error', 'Failed to connect to Salesforce.');
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const syncAllUsers = async () => {
-    setSyncingAll(true);
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        Alert.alert('Not Connected', 'Please log in with Salesforce first.');
-        return;
-      }
-      const response = await fetch(`${API_URL}/api/salesforce/sync-users?token=${encodeURIComponent(token)}`);
-      const data = await response.json();
-      if (data.success) {
-        setTeamUsers(data.users || []);
-        setShowTeam(true);
-        Alert.alert('Team Synced!', `${data.total_synced} users synced from Salesforce.`);
-      } else {
-        Alert.alert('Sync Failed', data.error || 'Could not sync users.');
-      }
-    } catch (error) {
-      console.error('Sync users error:', error);
-      Alert.alert('Error', 'Failed to sync team from Salesforce.');
-    } finally {
-      setSyncingAll(false);
-    }
-  };
-
-  const loadSyncedUsers = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/salesforce/users`);
-      const data = await response.json();
-      if (data.users?.length > 0) {
-        setTeamUsers(data.users);
-      }
-    } catch (error) {
-      console.error('Load synced users error:', error);
-    }
-  };
-
-  const removeInactiveUsers = async () => {
-    Alert.alert(
-      'Remove Inactive Users',
-      'This will permanently remove all inactive Salesforce users from the database. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            setRemovingInactive(true);
-            try {
-              const response = await fetch(`${API_URL}/api/salesforce/users/inactive`, { method: 'DELETE' });
-              const data = await response.json();
-              if (data.success) {
-                Alert.alert('Done', `Removed ${data.deleted} inactive users.`);
-                loadSyncedUsers();
-              } else {
-                Alert.alert('Error', data.error || 'Failed to remove inactive users.');
-              }
-            } catch (error) {
-              console.error('Remove inactive users error:', error);
-              Alert.alert('Error', 'Failed to remove inactive users.');
-            }
-            setRemovingInactive(false);
-          },
-        },
-      ]
-    );
-  };
+  // Salesforce sync functions removed - now handled automatically on login
 
   const pickProfilePhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -872,129 +773,6 @@ export default function ProfileScreen() {
           ) : (
             /* View Mode */
             <>
-              {/* Salesforce Sync Section */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>SALESFORCE</Text>
-                <View style={styles.sectionContent}>
-                  <TouchableOpacity
-                    style={styles.menuItem}
-                    onPress={syncMyProfile}
-                    disabled={syncing}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.menuItemLeft}>
-                      <View style={[styles.menuItemIcon, { backgroundColor: COLORS.lime + '20' }]}>
-                        {syncing ? (
-                          <ActivityIndicator size="small" color={COLORS.lime} />
-                        ) : (
-                          <Ionicons name="sync" size={20} color={COLORS.lime} />
-                        )}
-                      </View>
-                      <View style={styles.menuItemText}>
-                        <Text style={[styles.menuItemTitle, { color: COLORS.lime }]}>Sync My Profile</Text>
-                        <Text style={styles.menuItemSubtitle}>Pull latest role & info from Salesforce</Text>
-                      </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={COLORS.grayDark} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.menuItem}
-                    onPress={syncAllUsers}
-                    disabled={syncingAll}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.menuItemLeft}>
-                      <View style={[styles.menuItemIcon, { backgroundColor: COLORS.blue + '20' }]}>
-                        {syncingAll ? (
-                          <ActivityIndicator size="small" color={COLORS.blue} />
-                        ) : (
-                          <Ionicons name="people" size={20} color={COLORS.blue} />
-                        )}
-                      </View>
-                      <View style={styles.menuItemText}>
-                        <Text style={[styles.menuItemTitle, { color: COLORS.white }]}>Sync All Users</Text>
-                        <Text style={styles.menuItemSubtitle}>Pull all team profiles & roles from Salesforce</Text>
-                      </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={COLORS.grayDark} />
-                  </TouchableOpacity>
-                  {technician?.sf_profile_name ? (
-                    <View style={styles.menuItem}>
-                      <View style={styles.menuItemLeft}>
-                        <View style={[styles.menuItemIcon, { backgroundColor: '#8b5cf620' }]}>
-                          <Ionicons name="finger-print" size={20} color="#8b5cf6" />
-                        </View>
-                        <View style={styles.menuItemText}>
-                          <Text style={[styles.menuItemTitle, { color: COLORS.white }]}>SF Profile</Text>
-                          <Text style={styles.menuItemSubtitle}>{technician.sf_profile_name}</Text>
-                        </View>
-                      </View>
-                    </View>
-                  ) : null}
-                  {isAdmin && (
-                    <TouchableOpacity
-                      style={styles.menuItem}
-                      onPress={removeInactiveUsers}
-                      disabled={removingInactive}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.menuItemLeft}>
-                        <View style={[styles.menuItemIcon, { backgroundColor: '#ef444420' }]}>
-                          {removingInactive ? (
-                            <ActivityIndicator size="small" color="#ef4444" />
-                          ) : (
-                            <Ionicons name="person-remove" size={20} color="#ef4444" />
-                          )}
-                        </View>
-                        <View style={styles.menuItemText}>
-                          <Text style={[styles.menuItemTitle, { color: '#ef4444' }]}>Remove Inactive Users</Text>
-                          <Text style={styles.menuItemSubtitle}>Purge deactivated users from database</Text>
-                        </View>
-                      </View>
-                      <Ionicons name="chevron-forward" size={20} color={COLORS.grayDark} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              {/* Synced Team Section */}
-              {teamUsers.length > 0 && (
-                <View style={styles.section}>
-                  <TouchableOpacity 
-                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}
-                    onPress={() => setShowTeam(!showTeam)}
-                  >
-                    <Text style={styles.sectionTitle}>SALESFORCE TEAM ({teamUsers.length})</Text>
-                    <Ionicons name={showTeam ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.grayDark} />
-                  </TouchableOpacity>
-                  {showTeam && (
-                    <View style={styles.sectionContent}>
-                      {teamUsers.map((user: any, index: number) => (
-                        <View key={index} style={styles.teamUserItem}>
-                          <View style={styles.teamUserAvatar}>
-                            <Text style={styles.teamUserInitial}>
-                              {(user.name || '?').charAt(0).toUpperCase()}
-                            </Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.teamUserName}>{user.name}</Text>
-                            <Text style={styles.teamUserRole}>
-                              {[user.title, user.role, user.department].filter(Boolean).join(' · ') || 'No role assigned'}
-                            </Text>
-                            {user.email ? <Text style={styles.teamUserEmail}>{user.email}</Text> : null}
-                          </View>
-                          {user.sf_profile ? (
-                            <View style={styles.sfProfileBadge}>
-                              <Text style={styles.sfProfileBadgeText}>{user.sf_profile.substring(0, 12)}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              )}
-
               {/* Account Section */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>ACCOUNT</Text>

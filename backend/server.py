@@ -1507,7 +1507,11 @@ async def get_role_hierarchy():
 
 @api_router.post("/roles/assign")
 async def assign_role(data: dict):
-    """Assign a role to a team member"""
+    """Assign a role to a team member (admin-only)"""
+    requester_email = data.get("requester_email", "").strip()
+    if not await is_admin(requester_email):
+        raise HTTPException(status_code=403, detail="Only administrators can assign roles")
+    
     name = data.get("member_name", "").strip()
     role_name = data.get("role_name", "").strip()
     region = data.get("region", "").strip() or None
@@ -1552,8 +1556,10 @@ async def assign_role(data: dict):
     return {"success": True, "assignment": serialize_doc(assignment)}
 
 @api_router.delete("/roles/assign/{member_name}")
-async def remove_role_assignment(member_name: str, role_name: str = "", region: str = ""):
-    """Remove a role assignment"""
+async def remove_role_assignment(member_name: str, role_name: str = "", region: str = "", requester_email: str = ""):
+    """Remove a role assignment (admin-only)"""
+    if not await is_admin(requester_email):
+        raise HTTPException(status_code=403, detail="Only administrators can remove role assignments")
     query = {"member_name": member_name}
     if role_name:
         query["role_name"] = role_name
@@ -1564,6 +1570,53 @@ async def remove_role_assignment(member_name: str, role_name: str = "", region: 
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Assignment not found")
     return {"success": True, "deleted": member_name}
+
+@api_router.put("/roles/assign/{member_name}")
+async def update_role_assignment(member_name: str, data: dict = Body(...)):
+    """Update a team member's role (admin-only)"""
+    requester_email = data.get("requester_email", "").strip()
+    if not await is_admin(requester_email):
+        raise HTTPException(status_code=403, detail="Only administrators can update roles")
+    
+    old_role = data.get("old_role_name", "").strip()
+    old_region = data.get("old_region", "").strip() or None
+    new_role_name = data.get("new_role_name", "").strip()
+    new_region = data.get("new_region", "").strip() or None
+    
+    if not new_role_name:
+        raise HTTPException(status_code=400, detail="New role name is required")
+    
+    # Validate the new role exists
+    new_role = await db.roles.find_one({"name": new_role_name})
+    if not new_role:
+        raise HTTPException(status_code=400, detail=f"Role '{new_role_name}' does not exist")
+    
+    # Region is required for level 2+
+    if new_role.get("level", 0) >= 2 and not new_region:
+        raise HTTPException(status_code=400, detail="Region is required for this role level")
+    
+    query = {"member_name": member_name}
+    if old_role:
+        query["role_name"] = old_role
+    if old_region:
+        query["region"] = old_region
+    
+    update_data = {
+        "role_name": new_role_name,
+        "region": new_region,
+        "level": new_role.get("level", 5),
+        "color": new_role.get("color", "#94a3b8"),
+        "icon": new_role.get("icon", "person"),
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    
+    result = await db.team_assignments.update_one(query, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    
+    return {"success": True, "message": f"Updated {member_name} to {new_role_name}"}
+
+
 
 @api_router.get("/team")
 async def get_team():
@@ -1700,6 +1753,81 @@ async def get_project_shares(project_id: str):
     shares = await db.shares.find({"project_id": project_id}).to_list(100)
     shares = serialize_doc(shares)
     return {"shares": shares}
+
+
+# ============ Project Technician Assignment Routes ============
+
+@api_router.get("/projects/{project_id}/technicians")
+async def get_project_technicians(project_id: str):
+    """Get all technicians assigned to a project"""
+    assignments = await db.project_technicians.find({"project_id": project_id}).to_list(100)
+    assignments = serialize_doc(assignments)
+    return {"technicians": assignments, "total": len(assignments)}
+
+@api_router.post("/projects/{project_id}/technicians")
+async def assign_technician_to_project(project_id: str, data: dict = Body(...)):
+    """Assign a technician to a project (admin-only)"""
+    email = data.get("requester_email", "")
+    if not await is_admin(email):
+        raise HTTPException(status_code=403, detail="Only admins can assign technicians to projects")
+    
+    tech_name = data.get("name", "").strip()
+    tech_email = data.get("email", "").strip()
+    tech_id = data.get("user_id", "").strip()
+    tech_role = data.get("role", "Technician")
+    
+    if not tech_name:
+        raise HTTPException(status_code=400, detail="Technician name is required")
+    
+    # Check if already assigned
+    existing = await db.project_technicians.find_one({
+        "project_id": project_id,
+        "$or": [
+            {"email": tech_email} if tech_email else {"name": tech_name},
+            {"name": tech_name}
+        ]
+    })
+    if existing:
+        raise HTTPException(status_code=400, detail=f"{tech_name} is already assigned to this project")
+    
+    assignment = {
+        "project_id": project_id,
+        "user_id": tech_id or str(uuid.uuid4()),
+        "name": tech_name,
+        "email": tech_email,
+        "role": tech_role,
+        "assigned_at": datetime.utcnow().isoformat(),
+        "assigned_by": email,
+    }
+    
+    result = await db.project_technicians.insert_one(assignment.copy())
+    assignment["_id"] = str(result.inserted_id)
+    
+    return {"success": True, "assignment": assignment}
+
+@api_router.delete("/projects/{project_id}/technicians/{assignment_id}")
+async def remove_technician_from_project(project_id: str, assignment_id: str, email: str = ""):
+    """Remove a technician from a project (admin-only)"""
+    if not await is_admin(email):
+        raise HTTPException(status_code=403, detail="Only admins can remove technicians from projects")
+    
+    from bson import ObjectId
+    try:
+        result = await db.project_technicians.delete_one({
+            "_id": ObjectId(assignment_id),
+            "project_id": project_id
+        })
+    except Exception:
+        result = await db.project_technicians.delete_one({
+            "user_id": assignment_id,
+            "project_id": project_id
+        })
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    
+    return {"success": True, "message": "Technician removed from project"}
+
 
 # ============ Salesforce Integration Routes ============
 

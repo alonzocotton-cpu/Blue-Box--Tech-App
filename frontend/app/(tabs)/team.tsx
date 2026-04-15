@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const COLORS = {
@@ -94,10 +96,38 @@ export default function TeamScreen() {
   const [userSearch, setUserSearch] = useState('');
   const [showUserPicker, setShowUserPicker] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [technicianEmail, setTechnicianEmail] = useState('');
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editRoleName, setEditRoleName] = useState('');
+  const [editRegion, setEditRegion] = useState('');
+  const [showEditRolePicker, setShowEditRolePicker] = useState(false);
+  const [showEditRegionPicker, setShowEditRegionPicker] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
-    loadHierarchy();
+    checkAdminAndLoad();
   }, []);
+
+  const checkAdminAndLoad = async () => {
+    try {
+      const techStr = await AsyncStorage.getItem('technician');
+      if (techStr) {
+        const tech = JSON.parse(techStr);
+        const email = tech.email || '';
+        setTechnicianEmail(email);
+        
+        // Check admin status
+        const adminRes = await fetch(`${API_URL}/api/admin/check?email=${encodeURIComponent(email)}`);
+        const adminData = await adminRes.json();
+        setIsAdmin(adminData.is_admin || false);
+      }
+    } catch (error) {
+      console.error('Admin check error:', error);
+    }
+    loadHierarchy();
+  };
 
   const loadHierarchy = async () => {
     setLoading(true);
@@ -171,7 +201,7 @@ export default function TeamScreen() {
       const response = await fetch(`${API_URL}/api/roles/assign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(assignForm),
+        body: JSON.stringify({ ...assignForm, requester_email: technicianEmail }),
       });
       const data = await response.json();
       if (data.success) {
@@ -190,6 +220,7 @@ export default function TeamScreen() {
   };
 
   const removeMember = (member: TeamMember) => {
+    if (!isAdmin) return;
     Alert.alert(
       'Remove Assignment',
       `Remove ${member.member_name} as ${member.role_name}?`,
@@ -203,6 +234,7 @@ export default function TeamScreen() {
               const params = new URLSearchParams();
               if (member.role_name) params.append('role_name', member.role_name);
               if (member.region) params.append('region', member.region);
+              params.append('requester_email', technicianEmail);
               await fetch(`${API_URL}/api/roles/assign/${encodeURIComponent(member.member_name)}?${params.toString()}`, {
                 method: 'DELETE',
               });
@@ -216,12 +248,53 @@ export default function TeamScreen() {
     );
   };
 
+  const openEditRole = (member: TeamMember) => {
+    if (!isAdmin) return;
+    setEditingMember(member);
+    setEditRoleName(member.role_name);
+    setEditRegion(member.region || '');
+    setShowEditModal(true);
+  };
+
+  const updateMemberRole = async () => {
+    if (!editingMember || !editRoleName) return;
+    
+    setUpdating(true);
+    try {
+      const response = await fetch(`${API_URL}/api/roles/assign/${encodeURIComponent(editingMember.member_name)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requester_email: technicianEmail,
+          old_role_name: editingMember.role_name,
+          old_region: editingMember.region || '',
+          new_role_name: editRoleName,
+          new_region: editRegion || null,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        Alert.alert('Updated', `${editingMember.member_name} is now ${editRoleName}`);
+        setShowEditModal(false);
+        setEditingMember(null);
+        loadHierarchy();
+      } else {
+        Alert.alert('Error', data.detail || 'Failed to update role');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Could not update role');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const renderMember = (member: TeamMember, indent: number = 0) => (
     <TouchableOpacity
       key={`${member.member_name}-${member.role_name}-${member.region}`}
       style={[styles.memberCard, { marginLeft: indent }]}
-      onLongPress={() => removeMember(member)}
-      activeOpacity={0.8}
+      onPress={() => isAdmin ? openEditRole(member) : null}
+      onLongPress={() => isAdmin ? removeMember(member) : null}
+      activeOpacity={isAdmin ? 0.7 : 1}
     >
       <View style={[styles.memberAvatar, { backgroundColor: member.color + '25' }]}>
         <Text style={[styles.memberInitial, { color: member.color }]}>
@@ -233,6 +306,9 @@ export default function TeamScreen() {
         <Text style={[styles.memberRole, { color: member.color }]}>{member.role_name}</Text>
         {member.email ? <Text style={styles.memberEmail}>{member.email}</Text> : null}
       </View>
+      {isAdmin && (
+        <Ionicons name="create-outline" size={16} color={COLORS.grayDark} style={{ marginRight: 8 }} />
+      )}
       {member.region && (
         <View style={[styles.regionChip, { backgroundColor: (REGION_COLORS[member.region] || COLORS.blue) + '20' }]}>
           <Text style={[styles.regionChipText, { color: REGION_COLORS[member.region] || COLORS.blue }]}>
@@ -328,12 +404,14 @@ export default function TeamScreen() {
           />
           <Text style={styles.brandText}>TEAM</Text>
         </View>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setShowAssignModal(true)}
-        >
-          <Ionicons name="person-add" size={20} color={COLORS.navy} />
-        </TouchableOpacity>
+        {isAdmin && (
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => setShowAssignModal(true)}
+          >
+            <Ionicons name="person-add" size={20} color={COLORS.navy} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Stats Bar */}
@@ -380,7 +458,11 @@ export default function TeamScreen() {
 
         <View style={styles.tipCard}>
           <Ionicons name="information-circle" size={18} color={COLORS.blue} />
-          <Text style={styles.tipText}>Long-press a team member to remove their assignment</Text>
+          <Text style={styles.tipText}>
+            {isAdmin 
+              ? 'Tap a member to edit role. Long-press to remove.' 
+              : 'View only. Only administrators can manage team assignments.'}
+          </Text>
         </View>
 
         <View style={{ height: 40 }} />
@@ -566,6 +648,142 @@ export default function TeamScreen() {
               <TouchableOpacity
                 style={styles.cancelModalButton}
                 onPress={() => setShowAssignModal(false)}
+              >
+                <Text style={styles.cancelModalText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Edit Role Modal */}
+      <Modal visible={showEditModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Role</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <Ionicons name="close" size={24} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {editingMember && (
+                <View style={[styles.memberCard, { marginLeft: 0, marginBottom: 16 }]}>
+                  <View style={[styles.memberAvatar, { backgroundColor: COLORS.lime + '25' }]}>
+                    <Text style={[styles.memberInitial, { color: COLORS.lime }]}>
+                      {editingMember.member_name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberName}>{editingMember.member_name}</Text>
+                    <Text style={[styles.memberRole, { color: COLORS.grayDark }]}>
+                      Current: {editingMember.role_name}{editingMember.region ? ` (${editingMember.region})` : ''}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* New Role Picker */}
+              <Text style={styles.fieldLabel}>New Role *</Text>
+              <TouchableOpacity
+                style={styles.pickerButton}
+                onPress={() => setShowEditRolePicker(!showEditRolePicker)}
+              >
+                <Text style={editRoleName ? styles.pickerText : styles.pickerPlaceholder}>
+                  {editRoleName || 'Select a role'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color={COLORS.grayDark} />
+              </TouchableOpacity>
+              {showEditRolePicker && (
+                <View style={styles.pickerDropdown}>
+                  {roles.filter((r, i, arr) => arr.findIndex(x => x.name === r.name) === i).map((role, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[styles.pickerOption, editRoleName === role.name && styles.pickerOptionSelected]}
+                      onPress={() => {
+                        setEditRoleName(role.name);
+                        setShowEditRolePicker(false);
+                      }}
+                    >
+                      <Ionicons name={(role.icon || 'person') as any} size={16} color={role.color} />
+                      <Text style={[styles.pickerOptionText, { color: editRoleName === role.name ? COLORS.lime : COLORS.white }]}>
+                        {role.name}
+                      </Text>
+                      <Text style={styles.pickerOptionLevel}>Level {role.level}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Region Picker for level 2+ */}
+              {editRoleName && roles.find(r => r.name === editRoleName && (r.level >= 2)) && (
+                <>
+                  <Text style={styles.fieldLabel}>Region *</Text>
+                  <TouchableOpacity
+                    style={styles.pickerButton}
+                    onPress={() => setShowEditRegionPicker(!showEditRegionPicker)}
+                  >
+                    <Text style={editRegion ? styles.pickerText : styles.pickerPlaceholder}>
+                      {editRegion || 'Select a region'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color={COLORS.grayDark} />
+                  </TouchableOpacity>
+                  {showEditRegionPicker && (
+                    <View style={styles.pickerDropdown}>
+                      {regions.map(region => (
+                        <TouchableOpacity
+                          key={region}
+                          style={[styles.pickerOption, editRegion === region && styles.pickerOptionSelected]}
+                          onPress={() => {
+                            setEditRegion(region);
+                            setShowEditRegionPicker(false);
+                          }}
+                        >
+                          <View style={[styles.legendDot, { backgroundColor: REGION_COLORS[region] }]} />
+                          <Text style={[styles.pickerOptionText, { color: editRegion === region ? COLORS.lime : COLORS.white }]}>
+                            {region}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+            </ScrollView>
+
+            {/* Actions */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.assignButton}
+                onPress={updateMemberRole}
+                disabled={updating}
+              >
+                {updating ? (
+                  <ActivityIndicator size="small" color={COLORS.navy} />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={20} color={COLORS.navy} />
+                    <Text style={styles.assignButtonText}>Update Role</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.cancelModalButton, { backgroundColor: COLORS.red + '20', marginTop: 8 }]}
+                onPress={() => {
+                  if (editingMember) removeMember(editingMember);
+                  setShowEditModal(false);
+                }}
+              >
+                <Ionicons name="trash-outline" size={16} color={COLORS.red} />
+                <Text style={[styles.cancelModalText, { color: COLORS.red, marginLeft: 6 }]}>Remove from Team</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelModalButton}
+                onPress={() => setShowEditModal(false)}
               >
                 <Text style={styles.cancelModalText}>Cancel</Text>
               </TouchableOpacity>
