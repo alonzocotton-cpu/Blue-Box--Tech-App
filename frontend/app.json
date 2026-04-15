@@ -86,6 +86,7 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store"
     ],
+    "githubUrl": "https://github.com/blueboxair/bba-tech-app",
     "experiments": {
       "typedRoutes": true
     },
@@ -95,7 +96,7 @@
       }
     },
     "updates": {
-      "url": ""
+      "url": "https://u.expo.dev/5374137e-6924-4b8b-b7c2-f01b5ca3ac15"
     },
     "runtimeVersion": {
       "policy": "appVersion"
