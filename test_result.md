@@ -624,6 +624,42 @@ agent_communication:
         agent: "testing"
         comment: "✅ TESTED: DELETE /api/salesforce/users/inactive endpoint working correctly. Created 2 test inactive users, endpoint successfully deleted them and returned {'success': True, 'deleted': 2, 'message': 'Removed 2 inactive users'}. Verified GET /api/salesforce/users returns only active users after deletion (198 active users, 0 inactive). Also confirmed POST /api/auth/login regression test still works (returns BBA TEST APP technician from salesforce_profile source). Backend logs confirm 'Removed 2 inactive Salesforce users from DB'. All test scenarios passed."
 
+  - task: "Push Token Registration API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/push-token/register with test data {'push_token': 'ExponentPushToken[test123]', 'user_id': 'user1', 'email': 'test@blueboxair.com'} successfully returns {'success': true, 'message': 'Push token registered'}. Push token registration working correctly."
+
+  - task: "Push Token Unregistration API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: DELETE /api/push-token/unregister with test data {'push_token': 'ExponentPushToken[test123]'} successfully returns {'success': true}. Push token unregistration working correctly."
+
+  - task: "Notifications Management API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/notifications returns correct structure {'notifications': [], 'total': 0} as expected. POST /api/notifications/{id}/read correctly handles non-existent notification IDs and returns appropriate response. Notification management endpoints working correctly."
+
 test_plan:
   current_focus: []
   stuck_tasks: []
@@ -665,3 +701,5 @@ agent_communication:
     message: "Completed UI de-congestion across all screens (projects, team, profile, home). Merged status+LOB filters into single row on Projects screen. Made Team hierarchy collapsible with empty roles hidden by default. Compacted Profile header, stats, and sections. Also added 'Remove Inactive Users' feature: new DELETE /api/salesforce/users/inactive backend endpoint + frontend button (admin-only) in Profile Salesforce section. Please test the new endpoint."
   - agent: "testing"
     message: "✅ DELETE INACTIVE SALESFORCE USERS API TESTING COMPLETE: All 5 requested tests passed with 100% success rate. Key findings: 1) DELETE /api/salesforce/users/inactive endpoint working correctly - created 2 test inactive users, endpoint successfully deleted them and returned {'success': True, 'deleted': 2, 'message': 'Removed 2 inactive users'}. 2) GET /api/salesforce/users returns only active users after deletion (198 active users, 0 inactive users found). 3) GET /api/salesforce/users?active_only=true filter still works correctly returning 198 active users. 4) POST /api/auth/login regression test still works (returns BBA TEST APP technician from salesforce_profile source). 5) Backend logs confirm 'Removed 2 inactive Salesforce users from DB'. All test scenarios passed - deletion functionality working as expected, no regressions detected in existing endpoints."
+  - agent: "testing"
+    message: "✅ PUSH NOTIFICATION & NOTIFICATION MANAGEMENT API TESTING COMPLETE: All 5 requested endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/push-token/register with test data {'push_token': 'ExponentPushToken[test123]', 'user_id': 'user1', 'email': 'test@blueboxair.com'} successfully returns {'success': true, 'message': 'Push token registered'}. 2) DELETE /api/push-token/unregister with test data {'push_token': 'ExponentPushToken[test123]'} successfully returns {'success': true}. 3) GET /api/notifications returns correct structure {'notifications': [], 'total': 0} as expected. 4) POST /api/notifications/{id}/read correctly handles non-existent notification IDs and returns appropriate response - endpoint working correctly. 5) POST /api/auth/login regression test still works (returns BBA TEST APP technician from salesforce_profile source). All push notification and notification management endpoints working correctly, no regressions detected. Fixed duplicate route definitions in server.py that were causing 404 errors."

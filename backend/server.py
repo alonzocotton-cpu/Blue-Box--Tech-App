@@ -1112,10 +1112,26 @@ async def sync_opportunities(token: str = ""):
                         "salesforce_id": opp.get("Id"),
                         "assigned_to": opp.get("OwnerId", ""),
                         "assigned_to_name": owner.get("Name", ""),
+                        "assigned_to_email": owner.get("Email", ""),
                         "read": False,
                         "created_at": datetime.utcnow().isoformat(),
                     }
                     await db.notifications.insert_one(notification)
+                    
+                    # Send push notification to assigned user
+                    assigned_ids = [opp.get("OwnerId", ""), owner.get("Email", "")]
+                    assigned_ids = [x for x in assigned_ids if x]
+                    if assigned_ids:
+                        await send_push_notifications(
+                            user_ids=assigned_ids,
+                            title="New Project Assigned",
+                            body=f"{opp.get('Name', 'New project')} from {account.get('Name', 'a client')}",
+                            data={
+                                "type": "new_project",
+                                "salesforce_id": opp.get("Id", ""),
+                                "project_name": opp.get("Name", ""),
+                            }
+                        )
                 
                 synced_projects.append({
                     "name": project_data["name"],
@@ -1220,8 +1236,7 @@ async def get_notifications(unread_only: bool = False):
     notifications = []
     async for n in db.notifications.find(query).sort("created_at", -1).limit(50):
         notifications.append(serialize_doc(n))
-    unread_count = await db.notifications.count_documents({"read": False})
-    return {"notifications": notifications, "unread_count": unread_count}
+    return {"notifications": notifications, "total": len(notifications)}
 
 @api_router.post("/notifications/{notif_id}/read")
 async def mark_notification_read(notif_id: str):
@@ -2082,6 +2097,100 @@ async def get_dashboard_stats():
     }
     
     return stats
+
+# ========== PUSH NOTIFICATIONS ==========
+
+@api_router.post("/push-token/register")
+async def register_push_token(data: dict = Body(...)):
+    """Register an Expo push token for a user"""
+    token = data.get("push_token", "")
+    user_id = data.get("user_id", "")
+    email = data.get("email", "")
+    
+    if not token:
+        raise HTTPException(status_code=400, detail="push_token is required")
+    
+    # Store/update the push token for this user
+    await db.push_tokens.update_one(
+        {"push_token": token},
+        {"$set": {
+            "push_token": token,
+            "user_id": user_id,
+            "email": email,
+            "updated_at": datetime.utcnow().isoformat(),
+            "active": True,
+        }},
+        upsert=True,
+    )
+    
+    logging.info(f"Push token registered for user {email or user_id}")
+    return {"success": True, "message": "Push token registered"}
+
+
+@api_router.delete("/push-token/unregister")
+async def unregister_push_token(data: dict = Body(...)):
+    """Unregister a push token (on logout)"""
+    token = data.get("push_token", "")
+    if token:
+        await db.push_tokens.update_one(
+            {"push_token": token},
+            {"$set": {"active": False}}
+        )
+    return {"success": True}
+
+
+async def send_push_notifications(user_ids: list, title: str, body: str, data: dict = None):
+    """Send Expo push notifications to users by their SF user IDs or emails"""
+    # Get push tokens for these users
+    tokens_cursor = db.push_tokens.find({
+        "active": True,
+        "$or": [
+            {"user_id": {"$in": user_ids}},
+            {"email": {"$in": user_ids}},
+        ]
+    })
+    
+    push_tokens = []
+    async for t in tokens_cursor:
+        push_token = t.get("push_token", "")
+        if push_token.startswith("ExponentPushToken["):
+            push_tokens.append(push_token)
+    
+    if not push_tokens:
+        logging.info(f"No push tokens found for users: {user_ids}")
+        return {"sent": 0}
+    
+    # Send via Expo Push API
+    messages = []
+    for token in push_tokens:
+        message = {
+            "to": token,
+            "sound": "default",
+            "title": title,
+            "body": body,
+            "data": data or {},
+            "priority": "high",
+            "channelId": "project-assignments",
+        }
+        messages.append(message)
+    
+    try:
+        async with httpx.AsyncClient() as client_http:
+            resp = await client_http.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=messages,
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                timeout=15.0,
+            )
+            result = resp.json()
+            logging.info(f"Push notification sent to {len(push_tokens)} devices: {result}")
+            return {"sent": len(push_tokens), "result": result}
+    except Exception as e:
+        logging.error(f"Failed to send push notifications: {e}")
+        return {"sent": 0, "error": str(e)}
 
 # Include the router in the main app
 app.include_router(api_router)
