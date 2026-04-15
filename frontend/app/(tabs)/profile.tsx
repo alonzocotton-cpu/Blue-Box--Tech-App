@@ -289,34 +289,10 @@ export default function ProfileScreen() {
     }
   };
 
-  const takeProfilePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Camera access is needed for profile photo');
-      return;
-    }
-    
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-      base64: true,
-    });
-    
-    if (!result.canceled && result.assets[0]) {
-      const base64 = result.assets[0].base64 
-        ? `data:image/jpeg;base64,${result.assets[0].base64}` 
-        : result.assets[0].uri;
-      setProfilePhoto(base64);
-    }
-  };
+  // Profile photo - gallery only (camera removed per user request)
 
   const showPhotoOptions = () => {
-    Alert.alert('Profile Photo', 'Choose an option', [
-      { text: 'Take Photo', onPress: takeProfilePhoto },
-      { text: 'Choose from Gallery', onPress: pickProfilePhoto },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    pickProfilePhoto();
   };
 
   const addSkill = () => {
@@ -1066,13 +1042,7 @@ export default function ProfileScreen() {
                       />
                     }
                   />
-                  <MenuItem
-                    icon="camera-outline"
-                    title="Camera & Video"
-                    subtitle="Capture photos and videos"
-                    showArrow={false}
-                    color={COLORS.white}
-                  />
+                  {/* Camera & Video removed per user request */}
                 </View>
               </View>
 

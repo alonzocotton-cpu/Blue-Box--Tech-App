@@ -16,6 +16,7 @@
       "buildNumber": "1",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Upload photos from your gallery",
+        "NSCameraUsageDescription": "Capture photos for equipment documentation",
         "NSLocationWhenInUseUsageDescription": "Track your location for service visits",
         "NSLocationAlwaysUsageDescription": "Track location during service visits",
         "NSFaceIDUsageDescription": "Use Face ID to quickly login to the app",

@@ -281,6 +281,11 @@ export default function LoginScreen() {
           await AsyncStorage.setItem('rememberMe', 'false');
         }
         
+        // Trigger Salesforce sync in the background (non-blocking) BEFORE navigation
+        if (data.token) {
+          triggerSalesforceSync(data.token);
+        }
+        
         router.replace('/(tabs)/home');
       } else {
         // Show detailed error with hint for Salesforce auth issues
