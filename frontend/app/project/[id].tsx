@@ -252,42 +252,36 @@ export default function ProjectDetailScreen() {
             </div>
 
             <div class="content">
-              ${reportData.primary_contact ? \`
-              <div class="contact-card">
-                <div class="label">Primary Contact</div>
-                <div class="name">\${reportData.primary_contact.name || ''}</div>
-                <div class="detail">\${reportData.primary_contact.title || ''}</div>
-                <div class="detail">\${reportData.primary_contact.phone || ''} \${reportData.primary_contact.email ? '&bull; ' + reportData.primary_contact.email : ''}</div>
-              </div>\` : ''}
+              ${reportData.primary_contact ? '<div class="contact-card"><div class="label">Primary Contact</div><div class="name">' + (reportData.primary_contact.name || '') + '</div><div class="detail">' + (reportData.primary_contact.title || '') + '</div><div class="detail">' + (reportData.primary_contact.phone || '') + (reportData.primary_contact.email ? ' &bull; ' + reportData.primary_contact.email : '') + '</div></div>' : ''}
 
               <div class="sf-badge">
-                \${sfStatus.mode === 'live' ? '&#9989; Salesforce Connected' : '&#9888;&#65039; Mock Data — Configure credentials for live Salesforce sync'}
+                ${sfStatus.mode === 'live' ? '&#9989; Salesforce Connected' : '&#9888;&#65039; Mock Data — Configure credentials for live Salesforce sync'}
               </div>
 
               <div class="summary">
                 <div class="summary-item">
-                  <div class="summary-number">\${summary.total_equipment || 0}</div>
+                  <div class="summary-number">${summary.total_equipment || 0}</div>
                   <div class="summary-label">Equipment</div>
                 </div>
                 <div class="summary-item">
-                  <div class="summary-number">\${summary.total_readings || 0}</div>
+                  <div class="summary-number">${summary.total_readings || 0}</div>
                   <div class="summary-label">Readings</div>
                 </div>
                 <div class="summary-item">
-                  <div class="summary-number">\${summary.total_photos || 0}</div>
+                  <div class="summary-number">${summary.total_photos || 0}</div>
                   <div class="summary-label">Photos</div>
                 </div>
                 <div class="summary-item">
-                  <div class="summary-number">\${summary.total_service_logs || 0}</div>
+                  <div class="summary-number">${summary.total_service_logs || 0}</div>
                   <div class="summary-label">Logs</div>
                 </div>
               </div>
 
               <div class="section-title">Equipment Data Changes</div>
               <div class="section-subtitle">Pre vs Post service reading comparisons</div>
-              \${equipmentHTML}
+              ${equipmentHTML}
 
-              \${photosHTML}
+              ${photosHTML}
             </div>
 
             <div class="footer">
