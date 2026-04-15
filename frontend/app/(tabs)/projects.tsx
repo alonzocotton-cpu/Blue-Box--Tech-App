@@ -50,7 +50,7 @@ interface Project {
   lob_color?: string;
 }
 
-const STATUS_FILTERS = ['All', 'Active', 'On Hold', 'Completed'];
+const STATUS_FILTERS = ['All', 'Active', 'Completed'];
 const LOB_FILTERS = [
   { code: 'All', name: 'All LOBs', color: '#94a3b8' },
   { code: 'AS', name: 'Automation', color: '#3b82f6' },

@@ -184,9 +184,26 @@ export default function ProjectDetailScreen() {
         <div class="photos-card">
           <div class="photos-title">Project Photos (${photoCount})</div>
           <div class="photos-detail">
-            ${photoCount > 0 ? `${photoCount} photo(s) attached to this project` : 'No photos uploaded yet'}
+            ${photoCount > 0 ? photoCount + ' photo(s) attached to this project' : 'No photos uploaded yet'}
           </div>
         </div>`;
+
+      // Build contact card HTML separately
+      let contactCardHTML = '';
+      if (reportData.primary_contact) {
+        const pc = reportData.primary_contact;
+        contactCardHTML = '<div class="contact-card">'
+          + '<div class="label">Primary Contact</div>'
+          + '<div class="name">' + (pc.name || '') + '</div>'
+          + '<div class="detail">' + (pc.title || '') + '</div>'
+          + '<div class="detail">' + (pc.phone || '') + (pc.email ? ' - ' + pc.email : '') + '</div>'
+          + '</div>';
+      }
+
+      // Build SF badge
+      const sfBadgeText = sfStatus.mode === 'live' 
+        ? 'Salesforce Connected' 
+        : 'Mock Data - Configure credentials for live Salesforce sync';
 
       const html = `
         <html>
@@ -252,10 +269,10 @@ export default function ProjectDetailScreen() {
             </div>
 
             <div class="content">
-              ${reportData.primary_contact ? '<div class="contact-card"><div class="label">Primary Contact</div><div class="name">' + (reportData.primary_contact.name || '') + '</div><div class="detail">' + (reportData.primary_contact.title || '') + '</div><div class="detail">' + (reportData.primary_contact.phone || '') + (reportData.primary_contact.email ? ' &bull; ' + reportData.primary_contact.email : '') + '</div></div>' : ''}
+              ${contactCardHTML}
 
               <div class="sf-badge">
-                ${sfStatus.mode === 'live' ? '&#9989; Salesforce Connected' : '&#9888;&#65039; Mock Data — Configure credentials for live Salesforce sync'}
+                ${sfBadgeText}
               </div>
 
               <div class="summary">
@@ -638,11 +655,11 @@ export default function ProjectDetailScreen() {
           style={styles.actionBtn}
           onPress={() => {
             setSelectedEquipment(item);
-            takePhoto();
+            showMediaOptions();
           }}
         >
           <Ionicons name="camera" size={18} color={COLORS.lime} />
-          <Text style={styles.actionText}>Photo</Text>
+          <Text style={styles.actionText}>Media</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -1119,21 +1136,11 @@ export default function ProjectDetailScreen() {
 
         {activeTab === 'photos' && (
           <View style={styles.tabContent}>
-            {/* Media Action Bar */}
-            <View style={styles.mediaActionBar}>
-              <TouchableOpacity style={styles.mediaActionBtn} onPress={takePhoto}>
-                <Ionicons name="camera" size={20} color={COLORS.navy} />
-                <Text style={styles.mediaActionBtnText}>Photo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.mediaActionBtn} onPress={recordVideo}>
-                <Ionicons name="videocam" size={20} color={COLORS.navy} />
-                <Text style={styles.mediaActionBtnText}>Video</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.mediaActionBtn} onPress={pickFromGallery}>
-                <Ionicons name="images" size={20} color={COLORS.navy} />
-                <Text style={styles.mediaActionBtnText}>Gallery</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Single Add Media Button */}
+            <TouchableOpacity style={styles.addMediaBtn} onPress={showMediaOptions}>
+              <Ionicons name="add-circle" size={22} color={COLORS.navy} />
+              <Text style={styles.addMediaBtnText}>Add Photo or Video</Text>
+            </TouchableOpacity>
 
             {/* Media Count */}
             {mediaItems.length > 0 && (
@@ -2371,6 +2378,21 @@ const styles = StyleSheet.create({
     color: COLORS.navy,
   },
   // Media styles
+  addMediaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.lime,
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginBottom: 14,
+  },
+  addMediaBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.navy,
+  },
   mediaActionBar: {
     flexDirection: 'row',
     gap: 10,
