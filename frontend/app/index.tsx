@@ -231,6 +231,21 @@ export default function LoginScreen() {
     }
   };
 
+  const triggerSalesforceSync = async (token: string) => {
+    try {
+      // Run syncs in parallel in the background
+      const syncUrls = [
+        `${API_URL}/api/salesforce/sync-profile?token=${encodeURIComponent(token)}`,
+        `${API_URL}/api/salesforce/sync-users?token=${encodeURIComponent(token)}`,
+        `${API_URL}/api/salesforce/sync-opportunities?token=${encodeURIComponent(token)}`,
+      ];
+      await Promise.allSettled(syncUrls.map(url => fetch(url)));
+      console.log('Salesforce sync completed');
+    } catch (error) {
+      console.log('Salesforce sync error (non-blocking):', error);
+    }
+  };
+
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
       Alert.alert('Error', 'Please enter username and password');
@@ -345,53 +360,20 @@ export default function LoginScreen() {
               <Text style={styles.rememberMeText}>Remember me</Text>
             </TouchableOpacity>
 
-            {/* Salesforce Login Button - Browser OAuth */}
+            {/* Login Button */}
             <TouchableOpacity
-              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-              onPress={async () => {
-                setLoading(true);
-                try {
-                  // Open Salesforce login in browser
-                  const sfLoginUrl = `${API_URL}/api/auth/salesforce/redirect`;
-                  if (Platform.OS === 'web') {
-                    // Open in new window to avoid iframe restrictions from Salesforce
-                    window.open(sfLoginUrl, '_blank', 'noopener,noreferrer');
-                  } else {
-                    await Linking.openURL(sfLoginUrl);
-                  }
-                } catch (error) {
-                  console.error('SF OAuth error:', error);
-                  Alert.alert('Error', 'Could not open Salesforce login');
-                  setLoading(false);
-                }
-              }}
-              disabled={loading}
+              style={[styles.loginButton, (loading || !username.trim() || !password.trim()) && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              disabled={loading || !username.trim() || !password.trim()}
             >
               {loading ? (
                 <ActivityIndicator color={COLORS.navy} />
               ) : (
                 <>
-                  <Ionicons name="cloud-outline" size={22} color={COLORS.navy} />
-                  <Text style={styles.loginButtonText}>Sign in with Salesforce</Text>
+                  <Ionicons name="log-in-outline" size={22} color={COLORS.navy} />
+                  <Text style={styles.loginButtonText}>Login</Text>
                 </>
               )}
-            </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or use credentials</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Credential Login Button */}
-            <TouchableOpacity
-              style={styles.credentialButton}
-              onPress={handleLogin}
-              disabled={loading || !username.trim() || !password.trim()}
-            >
-              <Ionicons name="log-in-outline" size={20} color={COLORS.lime} />
-              <Text style={styles.credentialButtonText}>Login</Text>
             </TouchableOpacity>
 
             {/* Alternative Login Options */}
