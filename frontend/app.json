@@ -15,9 +15,7 @@
       "bundleIdentifier": "com.blueboxair.techapp",
       "buildNumber": "1",
       "infoPlist": {
-        "NSCameraUsageDescription": "Capture equipment photos and record service videos",
-        "NSPhotoLibraryUsageDescription": "Upload photos and videos from your gallery",
-        "NSMicrophoneUsageDescription": "Record audio with equipment service videos",
+        "NSPhotoLibraryUsageDescription": "Upload photos from your gallery",
         "NSLocationWhenInUseUsageDescription": "Track your location for service visits",
         "NSLocationAlwaysUsageDescription": "Track location during service visits",
         "NSFaceIDUsageDescription": "Use Face ID to quickly login to the app",
@@ -39,12 +37,9 @@
       "package": "com.blueboxair.techapp",
       "versionCode": 1,
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.USE_BIOMETRIC",
