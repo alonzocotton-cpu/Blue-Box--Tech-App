@@ -133,40 +133,44 @@ export default function ProjectDetailScreen() {
         if (eqReport.has_data) {
           (eqReport.comparisons || []).forEach((comp: any) => {
             if (!comp.pre && !comp.post) return;
-            const diffColor = comp.difference === null ? '#999' 
-              : comp.difference > 0 ? '#4CAF50' 
-              : comp.difference < 0 ? '#F44336' 
-              : '#999';
+            const diffColor = comp.difference === null ? '#7a8ea3' 
+              : comp.difference > 0 ? '#4ade80' 
+              : comp.difference < 0 ? '#f87171' 
+              : '#7a8ea3';
+            const diffClass = comp.difference === null ? 'change-neutral' 
+              : comp.difference > 0 ? 'change-up' 
+              : comp.difference < 0 ? 'change-down' 
+              : 'change-neutral';
             const diffDisplay = comp.difference !== null 
-              ? `<span style="color:${diffColor};font-weight:bold">${comp.difference > 0 ? '+' : ''}${comp.difference} ${comp.unit}</span>` 
-              : '—';
+              ? `<span class="${diffClass}">${comp.difference > 0 ? '+' : ''}${comp.difference} ${comp.unit}</span>` 
+              : '<span class="change-neutral">—</span>';
             const pctDisplay = comp.percent_change !== null
               ? `<br/><span style="color:${diffColor};font-size:11px">(${comp.percent_change > 0 ? '+' : ''}${comp.percent_change}%)</span>`
               : '';
             
             readingsRows += `
               <tr>
-                <td style="padding:8px 10px;border-bottom:1px solid #1a3a5c;font-weight:500;">${comp.reading_type}<br/><span style="color:#888;font-size:11px">${comp.unit}</span></td>
-                <td style="padding:8px 10px;border-bottom:1px solid #1a3a5c;text-align:center;font-weight:600">${comp.pre ? comp.pre.value : '—'}</td>
-                <td style="padding:8px 10px;border-bottom:1px solid #1a3a5c;text-align:center;font-weight:600">${comp.post ? comp.post.value : '—'}</td>
-                <td style="padding:8px 10px;border-bottom:1px solid #1a3a5c;text-align:center">${diffDisplay}${pctDisplay}</td>
+                <td style="font-weight:500;">${comp.reading_type}<br/><span style="color:#7a8ea3;font-size:11px">${comp.unit}</span></td>
+                <td style="font-weight:600">${comp.pre ? comp.pre.value : '—'}</td>
+                <td style="font-weight:600">${comp.post ? comp.post.value : '—'}</td>
+                <td>${diffDisplay}${pctDisplay}</td>
               </tr>`;
           });
         } else {
-          readingsRows = '<tr><td colspan="4" style="text-align:center;padding:16px;color:#888;font-style:italic">No readings recorded</td></tr>';
+          readingsRows = '<tr><td colspan="4" class="no-data">No readings recorded</td></tr>';
         }
         
         equipmentHTML += `
-          <div style="background:#0d2137;border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid #1a3a5c">
-            <div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px">${eq.name || 'Unknown'}</div>
-            <div style="font-size:12px;color:#888;margin-bottom:12px">${eq.equipment_type || ''} • ${eq.location || 'N/A'}</div>
-            <table style="width:100%;border-collapse:collapse;color:#fff;font-size:13px">
+          <div class="eq-card">
+            <div class="eq-name">${eq.name || 'Unknown'}</div>
+            <div class="eq-meta">${eq.equipment_type || ''} &bull; ${eq.location || 'N/A'}</div>
+            <table>
               <thead>
-                <tr style="background:#0a1929">
-                  <th style="padding:8px 10px;text-align:left;font-weight:700;color:#888;text-transform:uppercase;font-size:11px">Metric</th>
-                  <th style="padding:8px 10px;text-align:center;font-weight:700;color:#888;text-transform:uppercase;font-size:11px">Pre</th>
-                  <th style="padding:8px 10px;text-align:center;font-weight:700;color:#888;text-transform:uppercase;font-size:11px">Post</th>
-                  <th style="padding:8px 10px;text-align:center;font-weight:700;color:#888;text-transform:uppercase;font-size:11px">Change</th>
+                <tr>
+                  <th>Metric</th>
+                  <th>Pre</th>
+                  <th>Post</th>
+                  <th>Change</th>
                 </tr>
               </thead>
               <tbody>${readingsRows}</tbody>
@@ -177,9 +181,9 @@ export default function ProjectDetailScreen() {
       // Build photos section
       const photoCount = summary.total_photos || 0;
       const photosHTML = `
-        <div style="background:#0d2137;border-radius:10px;padding:16px;margin-top:16px;border:1px solid rgba(163,230,53,0.3)">
-          <div style="font-size:16px;font-weight:600;color:#a3e635">Project Photos (${photoCount})</div>
-          <div style="font-size:12px;color:#888;margin-top:4px">
+        <div class="photos-card">
+          <div class="photos-title">Project Photos (${photoCount})</div>
+          <div class="photos-detail">
             ${photoCount > 0 ? `${photoCount} photo(s) attached to this project` : 'No photos uploaded yet'}
           </div>
         </div>`;
@@ -189,74 +193,107 @@ export default function ProjectDetailScreen() {
           <head>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: #0a1929; color: #fff; padding: 24px; margin: 0; }
-              .header { text-align: center; padding-bottom: 20px; border-bottom: 2px solid #a3e635; margin-bottom: 20px; }
-              .header h1 { color: #a3e635; font-size: 24px; margin: 0; }
-              .header h2 { color: #fff; font-size: 18px; margin: 4px 0; font-weight: 400; }
-              .header p { color: #888; font-size: 12px; margin: 4px 0; }
-              .contact-card { background: #0d2137; border-radius: 10px; padding: 14px; margin-bottom: 16px; border: 1px solid #1a3a5c; }
-              .contact-card .label { color: #a3e635; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+              @page { margin: 0; }
+              * { box-sizing: border-box; }
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: #0a1929; color: #e0e0e0; padding: 0; margin: 0; }
+              .brand-bar { background: linear-gradient(135deg, #0d2137 0%, #132f4c 100%); padding: 28px 32px 24px; text-align: center; border-bottom: 3px solid #a3e635; }
+              .brand-logo { width: 60px; height: 60px; border-radius: 14px; margin: 0 auto 10px; display: block; }
+              .brand-name { font-size: 26px; font-weight: 800; color: #ffffff; letter-spacing: 4px; margin: 0; text-transform: uppercase; }
+              .brand-tagline { font-size: 11px; color: #a3e635; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; }
+              .report-meta { background: #0d2137; padding: 20px 32px; border-bottom: 1px solid #1a3a5c; }
+              .report-meta h2 { color: #ffffff; font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+              .report-meta p { color: #7a8ea3; font-size: 12px; margin: 2px 0; }
+              .content { padding: 20px 32px 32px; }
+              .contact-card { background: #132f4c; border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; border-left: 3px solid #a3e635; }
+              .contact-card .label { color: #a3e635; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 6px; }
               .contact-card .name { color: #fff; font-size: 15px; font-weight: 700; }
-              .contact-card .detail { color: #888; font-size: 12px; margin-top: 2px; }
-              .summary { display: flex; gap: 12px; margin-bottom: 24px; }
-              .summary-item { flex: 1; background: #0d2137; border-radius: 10px; padding: 14px; text-align: center; border: 1px solid #1a3a5c; }
-              .summary-number { font-size: 28px; font-weight: 700; color: #a3e635; }
-              .summary-label { font-size: 11px; color: #888; margin-top: 2px; }
-              .section-title { font-size: 18px; font-weight: 700; color: #fff; margin: 20px 0 6px; }
-              .section-subtitle { font-size: 12px; color: #888; margin-bottom: 14px; }
-              .sf-badge { background: rgba(255,152,0,0.1); border: 1px solid rgba(255,152,0,0.3); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; color: #FF9800; font-size: 12px; }
-              .footer { text-align: center; margin-top: 30px; padding-top: 16px; border-top: 1px solid #1a3a5c; color: #888; font-size: 11px; }
+              .contact-card .detail { color: #7a8ea3; font-size: 12px; margin-top: 2px; }
+              .sf-badge { background: rgba(255,152,0,0.08); border: 1px solid rgba(255,152,0,0.2); border-radius: 8px; padding: 10px 16px; margin-bottom: 18px; color: #FF9800; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+              .summary { display: flex; gap: 10px; margin-bottom: 24px; }
+              .summary-item { flex: 1; background: #132f4c; border-radius: 12px; padding: 16px 12px; text-align: center; border: 1px solid #1a3a5c; }
+              .summary-number { font-size: 28px; font-weight: 800; color: #a3e635; }
+              .summary-label { font-size: 10px; color: #7a8ea3; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+              .section-title { font-size: 16px; font-weight: 700; color: #ffffff; margin: 24px 0 4px; letter-spacing: 0.5px; }
+              .section-subtitle { font-size: 12px; color: #7a8ea3; margin-bottom: 14px; }
+              .eq-card { background: #132f4c; border-radius: 12px; padding: 18px; margin-bottom: 14px; border: 1px solid #1a3a5c; }
+              .eq-name { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 2px; }
+              .eq-meta { font-size: 11px; color: #7a8ea3; margin-bottom: 14px; }
+              table { width: 100%; border-collapse: collapse; color: #e0e0e0; font-size: 13px; }
+              thead tr { background: #0a1929; }
+              th { padding: 8px 10px; text-align: left; font-weight: 700; color: #7a8ea3; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+              th:not(:first-child) { text-align: center; }
+              td { padding: 10px 10px; border-bottom: 1px solid #1a3a5c; }
+              td:not(:first-child) { text-align: center; font-weight: 600; }
+              .change-up { color: #4ade80; font-weight: 700; }
+              .change-down { color: #f87171; font-weight: 700; }
+              .change-neutral { color: #7a8ea3; }
+              .photos-card { background: #132f4c; border-radius: 12px; padding: 16px 18px; margin-top: 18px; border: 1px solid rgba(163,230,53,0.25); }
+              .photos-title { font-size: 15px; font-weight: 600; color: #a3e635; }
+              .photos-detail { font-size: 12px; color: #7a8ea3; margin-top: 4px; }
+              .footer { text-align: center; margin-top: 36px; padding: 20px 32px; border-top: 2px solid #1a3a5c; background: #0d2137; }
+              .footer-brand { font-size: 14px; font-weight: 700; color: #a3e635; letter-spacing: 2px; }
+              .footer-tagline { font-size: 10px; color: #7a8ea3; margin-top: 2px; letter-spacing: 1px; }
+              .footer-note { font-size: 10px; color: #4a5f76; margin-top: 8px; }
+              .no-data { text-align: center; padding: 20px; color: #4a5f76; font-style: italic; font-size: 13px; }
             </style>
           </head>
           <body>
-            <div class="header">
-              <h1>BLUE BOX AIR, INC.</h1>
-              <h2>${project.name || 'Project Report'}</h2>
+            <div class="brand-bar">
+              <img class="brand-logo" src="https://customer-assets.emergentagent.com/job_ff19b27f-9c44-4d68-b174-1452a3057557/artifacts/2vycib7s_IMG_2827.jpeg" alt="Blue Box Air" />
+              <div class="brand-name">Blue Box Air</div>
+              <div class="brand-tagline">Coil Management Solutions</div>
+            </div>
+
+            <div class="report-meta">
+              <h2>${project.name || 'Service Report'}</h2>
               <p>Report ID: ${reportData.report_id || 'N/A'}</p>
               <p>Generated: ${reportData.generated_at ? format(new Date(reportData.generated_at), 'MMM d, yyyy h:mm a') : 'Now'}</p>
-              <p>Client: ${project.client_name || project.client || 'N/A'} | ${project.address || 'N/A'}</p>
+              <p>Client: ${project.client_name || project.client || 'N/A'} &bull; ${project.address || 'N/A'}</p>
             </div>
 
-            ${reportData.primary_contact ? `
-            <div class="contact-card">
-              <div class="label">Primary Contact</div>
-              <div class="name">${reportData.primary_contact.name || ''}</div>
-              <div class="detail">${reportData.primary_contact.title || ''}</div>
-              <div class="detail">${reportData.primary_contact.phone || ''} ${reportData.primary_contact.email ? '• ' + reportData.primary_contact.email : ''}</div>
-            </div>` : ''}
+            <div class="content">
+              ${reportData.primary_contact ? \`
+              <div class="contact-card">
+                <div class="label">Primary Contact</div>
+                <div class="name">\${reportData.primary_contact.name || ''}</div>
+                <div class="detail">\${reportData.primary_contact.title || ''}</div>
+                <div class="detail">\${reportData.primary_contact.phone || ''} \${reportData.primary_contact.email ? '&bull; ' + reportData.primary_contact.email : ''}</div>
+              </div>\` : ''}
 
-            <div class="sf-badge">
-              Salesforce: ${sfStatus.mode === 'live' ? 'Connected ✓' : 'Mock Data — Configure credentials for live sync'}
+              <div class="sf-badge">
+                \${sfStatus.mode === 'live' ? '&#9989; Salesforce Connected' : '&#9888;&#65039; Mock Data — Configure credentials for live Salesforce sync'}
+              </div>
+
+              <div class="summary">
+                <div class="summary-item">
+                  <div class="summary-number">\${summary.total_equipment || 0}</div>
+                  <div class="summary-label">Equipment</div>
+                </div>
+                <div class="summary-item">
+                  <div class="summary-number">\${summary.total_readings || 0}</div>
+                  <div class="summary-label">Readings</div>
+                </div>
+                <div class="summary-item">
+                  <div class="summary-number">\${summary.total_photos || 0}</div>
+                  <div class="summary-label">Photos</div>
+                </div>
+                <div class="summary-item">
+                  <div class="summary-number">\${summary.total_service_logs || 0}</div>
+                  <div class="summary-label">Logs</div>
+                </div>
+              </div>
+
+              <div class="section-title">Equipment Data Changes</div>
+              <div class="section-subtitle">Pre vs Post service reading comparisons</div>
+              \${equipmentHTML}
+
+              \${photosHTML}
             </div>
-
-            <div class="summary">
-              <div class="summary-item">
-                <div class="summary-number">${summary.total_equipment || 0}</div>
-                <div class="summary-label">Equipment</div>
-              </div>
-              <div class="summary-item">
-                <div class="summary-number">${summary.total_readings || 0}</div>
-                <div class="summary-label">Readings</div>
-              </div>
-              <div class="summary-item">
-                <div class="summary-number">${summary.total_photos || 0}</div>
-                <div class="summary-label">Photos</div>
-              </div>
-              <div class="summary-item">
-                <div class="summary-number">${summary.total_service_logs || 0}</div>
-                <div class="summary-label">Logs</div>
-              </div>
-            </div>
-
-            <div class="section-title">Equipment Data Changes</div>
-            <div class="section-subtitle">Pre vs Post service reading comparisons</div>
-            ${equipmentHTML}
-
-            ${photosHTML}
 
             <div class="footer">
-              <p>Blue Box Air, Inc. — Technician Service Report</p>
-              <p>This report was auto-generated from equipment service data</p>
+              <div class="footer-brand">BLUE BOX AIR, INC.</div>
+              <div class="footer-tagline">Coil Management Solutions</div>
+              <div class="footer-note">Technician Service Report &bull; Auto-generated from equipment service data</div>
             </div>
           </body>
         </html>`;
@@ -781,6 +818,19 @@ export default function ProjectDetailScreen() {
               </View>
             ) : reportData ? (
               <View>
+                {/* Branded Report Header */}
+                <View style={styles.reportBrandHeader}>
+                  <Image
+                    source={{ uri: 'https://customer-assets.emergentagent.com/job_ff19b27f-9c44-4d68-b174-1452a3057557/artifacts/2vycib7s_IMG_2827.jpeg' }}
+                    style={styles.reportBrandLogo}
+                    resizeMode="contain"
+                  />
+                  <View>
+                    <Text style={styles.reportBrandName}>BLUE BOX AIR</Text>
+                    <Text style={styles.reportBrandTagline}>Coil Management Solutions</Text>
+                  </View>
+                </View>
+
                 {/* Report Header */}
                 <View style={styles.reportHeader}>
                   <View style={styles.reportTitleRow}>
@@ -1929,6 +1979,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.gray,
     marginTop: 12,
+  },
+  reportBrandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.navyLight,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.lime + '30',
+    borderBottomWidth: 3,
+    borderBottomColor: COLORS.lime,
+    gap: 14,
+  },
+  reportBrandLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+  },
+  reportBrandName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.white,
+    letterSpacing: 3,
+  },
+  reportBrandTagline: {
+    fontSize: 11,
+    color: COLORS.lime,
+    letterSpacing: 1,
+    marginTop: 2,
   },
   reportHeader: {
     backgroundColor: COLORS.navyLight,
