@@ -235,26 +235,31 @@ export default function ProjectsScreen() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Active': return COLORS.lime;
-      case 'Completed': return '#22c55e';
-      case 'On Hold': return '#f59e0b';
-      default: return COLORS.gray;
-    }
+    const s = (status || '').toLowerCase();
+    if (s === 'completed' || s === 'closed won' || s === 'done') return '#22c55e';
+    if (s === 'closed lost' || s === 'cancelled' || s === 'not completed' || s === 'inactive') return '#ef4444';
+    if (s === 'on hold') return '#f59e0b';
+    if (s === 'active' || s === 'in progress') return '#f59e0b';
+    return '#f59e0b'; // default to in-progress yellow
   };
 
-  const renderProject = ({ item }: { item: Project }) => (
+  const renderProject = ({ item }: { item: Project }) => {
+    const stageColor = getStatusColor(item.status);
+    return (
     <TouchableOpacity
       style={styles.projectCard}
       onPress={() => router.push(`/project/${item.id}`)}
       activeOpacity={0.7}
     >
+      {/* Stage color bar */}
+      <View style={[styles.cardStageBar, { backgroundColor: stageColor }]} />
+      <View style={styles.cardInner}>
       <View style={styles.cardHeader}>
         <View style={styles.projectInfo}>
           <Text style={styles.projectNumber}>{item.project_number}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-            <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
-            <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+          <View style={[styles.statusBadge, { backgroundColor: stageColor + '20' }]}>
+            <View style={[styles.statusDot, { backgroundColor: stageColor }]} />
+            <Text style={[styles.statusText, { color: stageColor }]}>
               {item.status}
             </Text>
           </View>
@@ -294,8 +299,10 @@ export default function ProjectsScreen() {
         )}
         <Ionicons name="chevron-forward" size={20} color={COLORS.grayDark} />
       </View>
+      </View>
     </TouchableOpacity>
   );
+  };
 
   if (loading) {
     return (
@@ -320,6 +327,13 @@ export default function ProjectsScreen() {
             />
             <Text style={styles.brandText}>BLUE BOX</Text>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              {/* Kanban Board Button */}
+              <TouchableOpacity 
+                style={[styles.addButton, { backgroundColor: COLORS.inProgress }]}
+                onPress={() => router.push('/kanban')}
+              >
+                <Ionicons name="grid" size={20} color="#fff" />
+              </TouchableOpacity>
               {/* SF Sync Button */}
               <TouchableOpacity 
                 style={[styles.addButton, { backgroundColor: syncing ? COLORS.grayDark : '#3b82f6' }]}
@@ -723,12 +737,22 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   projectCard: {
+    flexDirection: 'row',
     backgroundColor: COLORS.navyLight,
     borderRadius: 14,
-    padding: 14,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: '#2d4a6f',
+    overflow: 'hidden',
+  },
+  cardStageBar: {
+    width: 4,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
+  },
+  cardInner: {
+    flex: 1,
+    padding: 14,
   },
   cardHeader: {
     flexDirection: 'row',

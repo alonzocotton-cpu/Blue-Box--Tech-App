@@ -660,6 +660,18 @@ agent_communication:
         agent: "testing"
         comment: "✅ TESTED: GET /api/notifications returns correct structure {'notifications': [], 'total': 0} as expected. POST /api/notifications/{id}/read correctly handles non-existent notification IDs and returns appropriate response. Notification management endpoints working correctly."
 
+  - task: "Projects Kanban API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: All 5 requested Kanban and Equipment endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/projects/kanban returns correct structure with kanban object containing in_progress, completed, not_completed arrays, plus counts, total, and is_admin fields. 2) GET /api/projects/kanban?email=alonzo.cotton@blueboxair.com&view_all=true correctly returns is_admin: true for admin user. 3) GET /api/projects/kanban?email=random@test.com&view_all=true correctly returns is_admin: false for non-admin user. 4) GET /api/admin/list returns 5 admins (including expected 4: alonzo.cotton, jim, linh.matthews, noah.ward plus 1 additional test admin). 5) POST /api/auth/login regression test still works correctly (returns BBA TEST APP technician from salesforce_profile source). All new Kanban endpoints working correctly, admin access control functional, no regressions detected."
+
 test_plan:
   current_focus: []
   stuck_tasks: []
@@ -703,3 +715,5 @@ agent_communication:
     message: "✅ DELETE INACTIVE SALESFORCE USERS API TESTING COMPLETE: All 5 requested tests passed with 100% success rate. Key findings: 1) DELETE /api/salesforce/users/inactive endpoint working correctly - created 2 test inactive users, endpoint successfully deleted them and returned {'success': True, 'deleted': 2, 'message': 'Removed 2 inactive users'}. 2) GET /api/salesforce/users returns only active users after deletion (198 active users, 0 inactive users found). 3) GET /api/salesforce/users?active_only=true filter still works correctly returning 198 active users. 4) POST /api/auth/login regression test still works (returns BBA TEST APP technician from salesforce_profile source). 5) Backend logs confirm 'Removed 2 inactive Salesforce users from DB'. All test scenarios passed - deletion functionality working as expected, no regressions detected in existing endpoints."
   - agent: "testing"
     message: "✅ PUSH NOTIFICATION & NOTIFICATION MANAGEMENT API TESTING COMPLETE: All 5 requested endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/push-token/register with test data {'push_token': 'ExponentPushToken[test123]', 'user_id': 'user1', 'email': 'test@blueboxair.com'} successfully returns {'success': true, 'message': 'Push token registered'}. 2) DELETE /api/push-token/unregister with test data {'push_token': 'ExponentPushToken[test123]'} successfully returns {'success': true}. 3) GET /api/notifications returns correct structure {'notifications': [], 'total': 0} as expected. 4) POST /api/notifications/{id}/read correctly handles non-existent notification IDs and returns appropriate response - endpoint working correctly. 5) POST /api/auth/login regression test still works (returns BBA TEST APP technician from salesforce_profile source). All push notification and notification management endpoints working correctly, no regressions detected. Fixed duplicate route definitions in server.py that were causing 404 errors."
+  - agent: "testing"
+    message: "✅ NEW KANBAN & EQUIPMENT ENDPOINTS TESTING COMPLETE: All 5 requested endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/projects/kanban returns correct structure with kanban object containing in_progress, completed, not_completed arrays, plus counts, total, and is_admin fields. Currently shows 0 projects in all categories as expected for empty database. 2) GET /api/projects/kanban?email=alonzo.cotton@blueboxair.com&view_all=true correctly returns is_admin: true for admin user - admin access control working correctly. 3) GET /api/projects/kanban?email=random@test.com&view_all=true correctly returns is_admin: false for non-admin user - non-admin identification working correctly. 4) GET /api/admin/list returns 5 admins total including all expected 4 system admins (alonzo.cotton@blueboxair.com, jim@blueboxair.com, linh.matthews@blueboxair.com, noah.ward@blueboxair.com) plus 1 additional test admin from previous testing. Admin seeding working correctly. 5) POST /api/auth/login regression test still works correctly (returns BBA TEST APP technician from salesforce_profile source). All new Kanban endpoints working correctly, admin access control functional, project categorization logic implemented, no regressions detected in existing authentication endpoints."

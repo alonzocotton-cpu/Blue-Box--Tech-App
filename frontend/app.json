@@ -8,7 +8,7 @@
     "scheme": "blueboxairtech",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "owner": "al.diron.cotton",
+    "owner": "alonzo.cotton",
     "description": "Blue Box Air, Inc. Technician App — Coil management, equipment service readings, project reports, and team collaboration for field technicians.",
     "ios": {
       "supportsTablet": true,

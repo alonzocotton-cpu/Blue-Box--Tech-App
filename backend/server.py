@@ -304,6 +304,9 @@ _pkce_store: Dict[str, str] = {}
 # Admin users list (seeded on startup)
 DEFAULT_ADMINS = [
     {"email": "alonzo.cotton@blueboxair.com", "name": "Alonzo Cotton", "granted_by": "system"},
+    {"email": "jim@blueboxair.com", "name": "Jim", "granted_by": "system"},
+    {"email": "linh.matthews@blueboxair.com", "name": "Linh Matthews", "granted_by": "system"},
+    {"email": "noah.ward@blueboxair.com", "name": "Noah Ward", "granted_by": "system"},
 ]
 
 async def seed_admins():
@@ -1225,6 +1228,122 @@ async def get_sf_equipment(account_name: str):
     equipment = []
     async for e in db.sf_equipment.find({"account_name": account_name}):
         equipment.append(serialize_doc(e))
+    return {"equipment": equipment, "total": len(equipment)}
+
+@api_router.get("/projects/kanban")
+async def get_projects_kanban(email: str = "", view_all: bool = False):
+    """Get all projects organized by stage for Kanban view.
+    Admins can set view_all=true to see all projects.
+    Non-admins only see their own assigned projects.
+    """
+    # Check if user is admin
+    is_admin_user = await is_admin(email.lower()) if email else False
+    
+    # Build query - admins with view_all see everything, others see only assigned
+    query: dict = {}
+    if not is_admin_user or not view_all:
+        if email:
+            query["$or"] = [
+                {"owner_email": {"$regex": email, "$options": "i"}},
+                {"assigned_to_email": {"$regex": email, "$options": "i"}},
+            ]
+    
+    # Fetch projects from both sf_projects and regular projects
+    all_projects = []
+    
+    # SF projects
+    async for p in db.sf_projects.find(query).sort("synced_at", -1):
+        doc = serialize_doc(p)
+        stage = (doc.get("stage") or doc.get("status") or "").strip()
+        
+        # Determine stage category
+        stage_lower = stage.lower()
+        if stage_lower in ["closed won", "completed", "done"]:
+            doc["stage_category"] = "completed"
+        elif stage_lower in ["closed lost", "cancelled", "not completed"]:
+            doc["stage_category"] = "not_completed"
+        else:
+            doc["stage_category"] = "in_progress"
+        
+        # Get equipment count
+        if doc.get("client_name"):
+            doc["equipment_count"] = await db.sf_equipment.count_documents({"account_name": doc["client_name"]})
+        
+        doc["source"] = "salesforce"
+        all_projects.append(doc)
+    
+    # Regular projects (non-SF)
+    regular_query = {} if (is_admin_user and view_all) else {}
+    async for p in db.projects.find(regular_query).sort("created_at", -1):
+        doc = serialize_doc(p)
+        stage = (doc.get("stage") or doc.get("status") or "Active").strip()
+        stage_lower = stage.lower()
+        if stage_lower in ["completed", "closed won", "done"]:
+            doc["stage_category"] = "completed"
+        elif stage_lower in ["closed lost", "cancelled", "not completed", "inactive"]:
+            doc["stage_category"] = "not_completed"
+        else:
+            doc["stage_category"] = "in_progress"
+        doc["source"] = "local"
+        all_projects.append(doc)
+    
+    # Group by stage category
+    kanban = {
+        "in_progress": [p for p in all_projects if p.get("stage_category") == "in_progress"],
+        "completed": [p for p in all_projects if p.get("stage_category") == "completed"],
+        "not_completed": [p for p in all_projects if p.get("stage_category") == "not_completed"],
+    }
+    
+    return {
+        "kanban": kanban,
+        "total": len(all_projects),
+        "is_admin": is_admin_user,
+        "counts": {
+            "in_progress": len(kanban["in_progress"]),
+            "completed": len(kanban["completed"]),
+            "not_completed": len(kanban["not_completed"]),
+        }
+    }
+
+@api_router.get("/projects/{project_id}/equipment")
+async def get_project_equipment(project_id: str):
+    """Get equipment linked to a specific project via its account"""
+    # Try to find the project first
+    project = None
+    try:
+        project = await db.sf_projects.find_one({"_id": ObjectId(project_id)})
+    except Exception:
+        project = await db.sf_projects.find_one({"salesforce_id": project_id})
+    
+    if not project:
+        try:
+            project = await db.projects.find_one({"_id": ObjectId(project_id)})
+        except Exception:
+            pass
+    
+    if not project:
+        return {"equipment": [], "total": 0, "error": "Project not found"}
+    
+    # Get equipment by account name or account ID
+    equipment = []
+    account_name = project.get("client_name") or project.get("client") or ""
+    account_id = project.get("account_id") or ""
+    
+    query_parts = []
+    if account_name:
+        query_parts.append({"account_name": account_name})
+    if account_id:
+        query_parts.append({"account_id": account_id})
+    
+    if query_parts:
+        eq_query = {"$or": query_parts} if len(query_parts) > 1 else query_parts[0]
+        async for e in db.sf_equipment.find(eq_query):
+            equipment.append(serialize_doc(e))
+    
+    # Also include any locally added equipment for this project
+    async for e in db.equipment.find({"project_id": project_id}):
+        equipment.append(serialize_doc(e))
+    
     return {"equipment": equipment, "total": len(equipment)}
 
 # ============ Notifications ============
