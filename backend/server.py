@@ -1251,8 +1251,16 @@ async def get_projects_kanban(email: str = "", view_all: bool = False):
     # Fetch projects from both sf_projects and regular projects
     all_projects = []
     
-    # SF projects
-    async for p in db.sf_projects.find(query).sort("synced_at", -1):
+    # SF projects - filter by assignment for non-admins
+    sf_query: dict = {}
+    if not is_admin_user or not view_all:
+        if email:
+            sf_query["$or"] = [
+                {"owner_email": {"$regex": email, "$options": "i"}},
+                {"assigned_to_email": {"$regex": email, "$options": "i"}},
+            ]
+    
+    async for p in db.sf_projects.find(sf_query).sort("synced_at", -1):
         doc = serialize_doc(p)
         stage = (doc.get("stage") or doc.get("status") or "").strip()
         
@@ -1272,9 +1280,27 @@ async def get_projects_kanban(email: str = "", view_all: bool = False):
         doc["source"] = "salesforce"
         all_projects.append(doc)
     
-    # Regular projects (non-SF)
-    regular_query = {} if (is_admin_user and view_all) else {}
-    async for p in db.projects.find(regular_query).sort("created_at", -1):
+    # Regular/local projects - include both mock data and custom DB projects
+    # Mock data (always include - these are assigned to the current user)
+    for p in MOCK_DATA.get("projects", []):
+        doc = dict(p)
+        # Ensure serializable dates
+        for dk in ["start_date", "end_date"]:
+            if dk in doc and isinstance(doc[dk], datetime):
+                doc[dk] = doc[dk].isoformat()
+        stage = (doc.get("stage") or doc.get("status") or "Active").strip()
+        stage_lower = stage.lower()
+        if stage_lower in ["completed", "closed won", "done"]:
+            doc["stage_category"] = "completed"
+        elif stage_lower in ["closed lost", "cancelled", "not completed", "inactive"]:
+            doc["stage_category"] = "not_completed"
+        else:
+            doc["stage_category"] = "in_progress"
+        doc["source"] = "local"
+        all_projects.append(doc)
+    
+    # Custom DB projects
+    async for p in db.custom_projects.find({}).sort("created_at", -1):
         doc = serialize_doc(p)
         stage = (doc.get("stage") or doc.get("status") or "Active").strip()
         stage_lower = stage.lower()
