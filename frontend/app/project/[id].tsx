@@ -163,7 +163,7 @@ export default function ProjectDetailScreen() {
         equipmentHTML += `
           <div class="eq-card">
             <div class="eq-name">${eq.name || 'Unknown'}</div>
-            <div class="eq-meta">${eq.equipment_type || ''} &bull; ${eq.location || 'N/A'}</div>
+            <div class="eq-meta">${eq.equipment_type || ''} \u2022 ${eq.location || 'N/A'}</div>
             <table>
               <thead>
                 <tr>
@@ -265,7 +265,7 @@ export default function ProjectDetailScreen() {
               <h2>${project.name || 'Service Report'}</h2>
               <p>Report ID: ${reportData.report_id || 'N/A'}</p>
               <p>Generated: ${reportData.generated_at ? format(new Date(reportData.generated_at), 'MMM d, yyyy h:mm a') : 'Now'}</p>
-              <p>Client: ${project.client_name || project.client || 'N/A'} &bull; ${project.address || 'N/A'}</p>
+              <p>Client: ${project.client_name || project.client || 'N/A'} \u2022 ${project.address || 'N/A'}</p>
             </div>
 
             <div class="content">
@@ -304,7 +304,7 @@ export default function ProjectDetailScreen() {
             <div class="footer">
               <div class="footer-brand">BLUE BOX AIR, INC.</div>
               <div class="footer-tagline">Coil Management Solutions</div>
-              <div class="footer-note">Technician Service Report &bull; Auto-generated from equipment service data</div>
+              <div class="footer-note">Technician Service Report \u2022 Auto-generated from equipment service data</div>
             </div>
           </body>
         </html>`;
