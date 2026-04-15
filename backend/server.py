@@ -1694,6 +1694,14 @@ async def update_profile(profile_data: dict):
     merged = {**MOCK_DATA["technician"], **update_data}
     return {"success": True, "profile": merged}
 
+@api_router.get("/auth/profile/check")
+async def check_profile_completed(email: str = ""):
+    """Check if a user has completed their profile setup"""
+    if not email:
+        return {"profile_completed": False}
+    completed = await db.profiles.find_one({"email": email, "profile_completed": True})
+    return {"profile_completed": completed is not None}
+
 @api_router.post("/auth/profile/setup")
 async def setup_profile(profile_data: dict):
     """First-time profile setup for new technicians"""
