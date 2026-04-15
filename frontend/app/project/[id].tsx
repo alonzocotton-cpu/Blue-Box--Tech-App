@@ -23,6 +23,8 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { format } from 'date-fns';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 // Blue Box Air colors
@@ -78,6 +80,15 @@ export default function ProjectDetailScreen() {
   const [shareMessage, setShareMessage] = useState('');
   const [sharing, setSharing] = useState(false);
 
+  // Assigned technicians state
+  const [assignedTechs, setAssignedTechs] = useState<any[]>([]);
+  const [showAssignTechModal, setShowAssignTechModal] = useState(false);
+  const [techSearch, setTechSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchingTechs, setSearchingTechs] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState('');
+
   const fetchDetails = async () => {
     try {
       const response = await fetch(`${API_URL}/api/projects/${id}`);
@@ -93,7 +104,130 @@ export default function ProjectDetailScreen() {
 
   useEffect(() => {
     fetchDetails();
+    loadUserContext();
+    fetchAssignedTechs();
   }, [id]);
+
+  const loadUserContext = async () => {
+    try {
+      const techStr = await AsyncStorage.getItem('technician');
+      if (techStr) {
+        const tech = JSON.parse(techStr);
+        const email = tech.email || '';
+        setCurrentUserEmail(email);
+        const adminRes = await fetch(`${API_URL}/api/admin/check?email=${encodeURIComponent(email)}`);
+        const adminData = await adminRes.json();
+        setIsAdmin(adminData.is_admin || false);
+      }
+    } catch (error) {
+      console.error('Error loading user context:', error);
+    }
+  };
+
+  const fetchAssignedTechs = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${id}/technicians`);
+      const data = await response.json();
+      setAssignedTechs(data.technicians || []);
+    } catch (error) {
+      console.error('Error fetching assigned techs:', error);
+    }
+  };
+
+  const searchTechnicians = async (query: string) => {
+    setTechSearch(query);
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchingTechs(true);
+    try {
+      const response = await fetch(`${API_URL}/api/salesforce/users?search=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      // Filter out already assigned techs
+      const assignedEmails = assignedTechs.map((t: any) => t.email?.toLowerCase());
+      const filtered = (data.users || []).filter((u: any) => 
+        !assignedEmails.includes(u.email?.toLowerCase())
+      );
+      setSearchResults(filtered);
+    } catch (error) {
+      // Fallback: search mock technicians
+      try {
+        const response = await fetch(`${API_URL}/api/technicians`);
+        const data = await response.json();
+        const assignedEmails = assignedTechs.map((t: any) => t.email?.toLowerCase());
+        const filtered = (data.technicians || []).filter((t: any) =>
+          t.full_name?.toLowerCase().includes(query.toLowerCase()) &&
+          !assignedEmails.includes(t.email?.toLowerCase())
+        );
+        setSearchResults(filtered.map((t: any) => ({
+          name: t.full_name,
+          email: t.email,
+          title: t.title,
+        })));
+      } catch (e) {
+        console.error('Error searching technicians:', e);
+      }
+    } finally {
+      setSearchingTechs(false);
+    }
+  };
+
+  const assignTechToProject = async (tech: any) => {
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${id}/technicians`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: tech.name || tech.full_name,
+          email: tech.email,
+          role: tech.title || tech.role || 'Technician',
+          user_id: tech.id || tech.salesforce_id || '',
+          requester_email: currentUserEmail,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        Alert.alert('Assigned', `${tech.name || tech.full_name} added to project`);
+        fetchAssignedTechs();
+        setTechSearch('');
+        setSearchResults([]);
+        setShowAssignTechModal(false);
+      } else {
+        Alert.alert('Error', data.detail || 'Failed to assign technician');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to assign technician');
+    }
+  };
+
+  const removeTechFromProject = (tech: any) => {
+    if (!isAdmin) return;
+    Alert.alert('Remove Technician', `Remove ${tech.name} from this project?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const assignId = tech._id || tech.user_id;
+            const response = await fetch(
+              `${API_URL}/api/projects/${id}/technicians/${assignId}?email=${encodeURIComponent(currentUserEmail)}`,
+              { method: 'DELETE' }
+            );
+            const data = await response.json();
+            if (data.success) {
+              fetchAssignedTechs();
+            } else {
+              Alert.alert('Error', data.detail || 'Failed to remove');
+            }
+          } catch (error) {
+            Alert.alert('Error', 'Failed to remove technician');
+          }
+        },
+      },
+    ]);
+  };
 
   const fetchReport = async () => {
     setReportLoading(true);
@@ -796,6 +930,51 @@ export default function ProjectDetailScreen() {
           </View>
         </View>
 
+        {/* Assigned Technicians Section */}
+        <View style={styles.assignedTechSection}>
+          <View style={styles.assignedTechHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="people" size={18} color={COLORS.lime} />
+              <Text style={styles.assignedTechTitle}>
+                Assigned Techs ({assignedTechs.length})
+              </Text>
+            </View>
+            {isAdmin && (
+              <TouchableOpacity
+                style={styles.addTechButton}
+                onPress={() => setShowAssignTechModal(true)}
+              >
+                <Ionicons name="person-add" size={16} color={COLORS.navy} />
+                <Text style={styles.addTechButtonText}>Add</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {assignedTechs.length === 0 ? (
+            <Text style={styles.noTechsText}>No technicians assigned yet</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+              {assignedTechs.map((tech: any, idx: number) => (
+                <TouchableOpacity
+                  key={tech._id || idx}
+                  style={styles.techChip}
+                  onLongPress={() => isAdmin && removeTechFromProject(tech)}
+                  activeOpacity={isAdmin ? 0.7 : 1}
+                >
+                  <View style={styles.techChipAvatar}>
+                    <Text style={styles.techChipInitial}>
+                      {(tech.name || '?').charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={styles.techChipName} numberOfLines={1}>{tech.name}</Text>
+                    <Text style={styles.techChipRole} numberOfLines={1}>{tech.role || 'Technician'}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
         {/* Tabs */}
         <View style={styles.tabsContainer}>
           {['report', 'equipment', 'service', 'photos'].map((tab) => (
@@ -1422,6 +1601,75 @@ export default function ProjectDetailScreen() {
                 </Text>
               )}
             </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Assign Technician Modal */}
+      <Modal visible={showAssignTechModal} transparent animationType="slide">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Technician</Text>
+              <TouchableOpacity onPress={() => {
+                setShowAssignTechModal(false);
+                setTechSearch('');
+                setSearchResults([]);
+              }}>
+                <Ionicons name="close" size={24} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.techSearchContainer}>
+              <Ionicons name="search" size={18} color={COLORS.grayDark} />
+              <TextInput
+                style={styles.techSearchInput}
+                placeholder="Type a name to search..."
+                placeholderTextColor={COLORS.grayDark}
+                value={techSearch}
+                onChangeText={searchTechnicians}
+                autoFocus
+              />
+              {searchingTechs && <ActivityIndicator size="small" color={COLORS.lime} />}
+            </View>
+
+            <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+              {searchResults.length > 0 ? (
+                searchResults.map((user: any, idx: number) => (
+                  <TouchableOpacity
+                    key={user.email || idx}
+                    style={styles.techSearchResult}
+                    onPress={() => assignTechToProject(user)}
+                  >
+                    <View style={styles.techSearchAvatar}>
+                      <Text style={styles.techSearchInitial}>
+                        {(user.name || user.full_name || '?').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.techSearchName}>{user.name || user.full_name}</Text>
+                      <Text style={styles.techSearchEmail}>
+                        {user.title || user.role || 'Technician'}{user.email ? ` · ${user.email}` : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name="add-circle" size={24} color={COLORS.lime} />
+                  </TouchableOpacity>
+                ))
+              ) : techSearch.length >= 2 && !searchingTechs ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Ionicons name="search-outline" size={32} color={COLORS.grayDark} />
+                  <Text style={{ color: COLORS.grayDark, marginTop: 8 }}>No matching technicians found</Text>
+                </View>
+              ) : techSearch.length < 2 ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Ionicons name="person-add-outline" size={32} color={COLORS.grayDark} />
+                  <Text style={{ color: COLORS.grayDark, marginTop: 8 }}>Type at least 2 characters to search</Text>
+                </View>
+              ) : null}
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -2505,5 +2753,129 @@ const styles = StyleSheet.create({
   techCheckboxChecked: {
     backgroundColor: COLORS.lime,
     borderColor: COLORS.lime,
+  },
+  // Assigned Technicians Section
+  assignedTechSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: COLORS.navyLight,
+    marginHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  assignedTechHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  assignedTechTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.white,
+    marginLeft: 8,
+  },
+  addTechButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.lime,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  addTechButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.navy,
+  },
+  noTechsText: {
+    fontSize: 13,
+    color: COLORS.grayDark,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  techChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.navy,
+    borderRadius: 10,
+    padding: 10,
+    marginRight: 10,
+    width: 180,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  techChipAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.lime + '25',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  techChipInitial: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.lime,
+  },
+  techChipName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
+  techChipRole: {
+    fontSize: 11,
+    color: COLORS.grayDark,
+  },
+  // Tech search modal
+  techSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.navy,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    margin: 16,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  techSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.white,
+    marginLeft: 8,
+    padding: 0,
+  },
+  techSearchResult: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e3a5f',
+  },
+  techSearchAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.lime + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  techSearchInitial: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.lime,
+  },
+  techSearchName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
+  techSearchEmail: {
+    fontSize: 12,
+    color: COLORS.grayDark,
+    marginTop: 2,
   },
 });

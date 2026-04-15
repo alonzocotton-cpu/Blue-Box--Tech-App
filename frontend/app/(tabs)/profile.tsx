@@ -114,14 +114,15 @@ export default function ProfileScreen() {
       const response = await fetch(profileUrl);
       const apiData = await response.json();
       
-      // Merge: prefer API data but fill gaps with local data
+      // Merge: prefer login data for identity, API data for enrichment
       const data = {
         ...(localData || {}),
         ...apiData,
-        // Preserve SF-sourced fields if they exist in local data
-        full_name: apiData.full_name || localData?.full_name || '',
-        email: apiData.email || localData?.email || '',
-        phone: apiData.phone || localData?.phone || '',
+        // Identity fields: always prefer login data (matches welcome screen)
+        full_name: localData?.full_name || apiData.full_name || '',
+        email: localData?.email || apiData.email || '',
+        phone: localData?.phone || apiData.phone || '',
+        // Enrichment fields: prefer API data for richer details
         title: apiData.title || localData?.title || 'Technician',
         company: apiData.company || localData?.company || 'Blue Box Air, Inc.',
         skills: apiData.skills?.length ? apiData.skills : (localData?.skills || []),
