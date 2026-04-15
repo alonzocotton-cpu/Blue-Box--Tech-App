@@ -192,7 +192,7 @@ export default function HomeScreen() {
           <Text style={styles.welcomeText}>
             Welcome back,{' '}
             <Text style={styles.welcomeName}>
-              {technician?.full_name || 'Technician'}
+              {technician?.first_name || technician?.full_name?.split(' ')[0] || 'Technician'}
             </Text>
           </Text>
           <Text style={styles.welcomeSub}>

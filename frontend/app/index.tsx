@@ -91,8 +91,8 @@ export default function LoginScreen() {
             // Clean URL
             window.history.replaceState({}, '', window.location.pathname);
             
-            // Navigate to home
-            router.replace('/(tabs)/home');
+            // Navigate based on profile status
+            await navigateAfterAuth();
             return;
           } catch (e) {
             console.error('Error parsing SF callback data:', e);
@@ -112,7 +112,7 @@ export default function LoginScreen() {
           await AsyncStorage.setItem('authToken', sfToken);
           await AsyncStorage.setItem('technician', JSON.stringify(technician));
           await AsyncStorage.setItem('loginSource', 'salesforce');
-          router.replace('/(tabs)/home');
+          await navigateAfterAuth();
         }
       }
     } catch (error) {
@@ -135,6 +135,23 @@ export default function LoginScreen() {
     } catch (error) {
       console.error('Biometric check error:', error);
     }
+  };
+
+  // Helper: navigate based on profile completion status
+  const navigateAfterAuth = async () => {
+    try {
+      const techStr = await AsyncStorage.getItem('technician');
+      if (techStr) {
+        const tech = JSON.parse(techStr);
+        if (tech.profile_completed === false) {
+          router.replace('/profile-setup');
+          return;
+        }
+      }
+    } catch (e) {
+      console.log('Profile check error:', e);
+    }
+    router.replace('/(tabs)/home');
   };
 
   const loadSavedCredentials = async () => {
@@ -174,7 +191,7 @@ export default function LoginScreen() {
         const savedTechnician = await AsyncStorage.getItem('technician');
         
         if (savedToken && savedTechnician) {
-          router.replace('/(tabs)/home');
+          await navigateAfterAuth();
         }
       }
     } catch (error) {
@@ -198,7 +215,7 @@ export default function LoginScreen() {
         const savedTechnician = await AsyncStorage.getItem('technician');
         
         if (savedToken && savedTechnician) {
-          router.replace('/(tabs)/home');
+          await navigateAfterAuth();
         } else {
           // No saved session, do regular login
           Alert.alert('Info', 'Please login with your credentials first');
@@ -286,7 +303,8 @@ export default function LoginScreen() {
           triggerSalesforceSync(data.token);
         }
         
-        router.replace('/(tabs)/home');
+        // Navigate based on profile completion status
+        await navigateAfterAuth();
       } else {
         // Show detailed error with hint for Salesforce auth issues
         const errorMsg = data.message || 'Invalid credentials';

@@ -527,6 +527,12 @@ async def login(credentials: TechnicianLogin):
             "source": "salesforce",
             "is_admin": await is_admin(synced_profile.get("email", "")),
         }
+        
+        # Check if this user has completed profile setup
+        profile_email = technician.get("email", "")
+        completed_profile = await db.profiles.find_one({"email": profile_email, "profile_completed": True})
+        technician["profile_completed"] = completed_profile is not None
+        
         return {
             "success": True,
             "message": f"Welcome back, {technician['full_name']}",
@@ -537,6 +543,13 @@ async def login(credentials: TechnicianLogin):
     
     # Final fallback: Mock login for development
     technician = MOCK_DATA["technician"].copy()
+    
+    # Check if this user has completed profile setup
+    email = technician.get("email", "")
+    existing_profile = await db.profiles.find_one({"email": email, "profile_completed": True})
+    technician["profile_completed"] = existing_profile is not None
+    logging.info(f"LOGIN: email={email}, profile_completed={technician['profile_completed']}, existing_profile={existing_profile is not None}")
+    
     return {
         "success": True,
         "message": "Login successful (Demo mode - use Salesforce credentials for live access)",
@@ -1666,7 +1679,7 @@ async def update_profile(profile_data: dict):
     """Update technician profile"""
     technician_id = MOCK_DATA["technician"]["id"]
     
-    allowed_fields = ["full_name", "email", "phone", "skills", "profile_photo", "title", "company"]
+    allowed_fields = ["full_name", "first_name", "last_name", "email", "phone", "skills", "profile_photo", "title", "company", "position", "supervisor", "profile_completed"]
     update_data = {k: v for k, v in profile_data.items() if k in allowed_fields}
     update_data["technician_id"] = technician_id
     update_data["updated_at"] = datetime.utcnow().isoformat()
@@ -1680,6 +1693,55 @@ async def update_profile(profile_data: dict):
     # Merge with mock data for complete profile
     merged = {**MOCK_DATA["technician"], **update_data}
     return {"success": True, "profile": merged}
+
+@api_router.post("/auth/profile/setup")
+async def setup_profile(profile_data: dict):
+    """First-time profile setup for new technicians"""
+    first_name = profile_data.get("first_name", "").strip()
+    last_name = profile_data.get("last_name", "").strip()
+    position = profile_data.get("position", "").strip()
+    supervisor = profile_data.get("supervisor", "").strip()
+    phone = profile_data.get("phone", "").strip()
+    profile_photo = profile_data.get("profile_photo", "")
+    email = profile_data.get("email", "").strip()
+    
+    if not first_name or not last_name:
+        raise HTTPException(status_code=400, detail="First and last name are required")
+    if not position:
+        raise HTTPException(status_code=400, detail="Position is required")
+    
+    full_name = f"{first_name} {last_name}"
+    
+    profile = {
+        "technician_id": MOCK_DATA["technician"]["id"],
+        "first_name": first_name,
+        "last_name": last_name,
+        "full_name": full_name,
+        "email": email or MOCK_DATA["technician"].get("email", ""),
+        "phone": phone,
+        "position": position,
+        "title": position,
+        "supervisor": supervisor,
+        "profile_photo": profile_photo,
+        "company": "Blue Box Air, Inc.",
+        "profile_completed": True,
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    
+    await db.profiles.update_one(
+        {"email": profile["email"]},
+        {"$set": profile},
+        upsert=True
+    )
+    
+    # Return the complete technician data
+    technician = {**MOCK_DATA["technician"], **profile}
+    return {
+        "success": True,
+        "message": f"Welcome to Blue Box Air, {first_name}!",
+        "technician": technician,
+    }
 
 # ============ Media (Photos & Videos) ============
 
