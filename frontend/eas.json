@@ -41,18 +41,5 @@
         "APP_ENV": "production"
       }
     }
-  },
-  "submit": {
-    "production": {
-      "ios": {
-        "appleId": "al.cotton@icloud.com",
-        "ascAppId": "",
-        "appleTeamId": ""
-      },
-      "android": {
-        "serviceAccountKeyPath": "",
-        "track": "internal"
-      }
-    }
   }
 }
