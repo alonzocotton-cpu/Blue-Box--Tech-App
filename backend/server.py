@@ -42,6 +42,7 @@ api_router = APIRouter(prefix="/api")
 
 # === Temporary Screenshot Download Endpoints ===
 SCREENSHOTS_DIR = "/tmp/app_screenshots"
+IPAD_SCREENSHOTS_DIR = "/tmp/ipad_screenshots"
 
 @api_router.get("/screenshots")
 async def list_screenshots():
@@ -59,63 +60,95 @@ async def list_screenshots():
 @api_router.get("/screenshots/download/{filename}")
 async def download_screenshot(filename: str):
     """Download a specific screenshot file"""
+    # Check iPhone screenshots first, then iPad
     filepath = os.path.join(SCREENSHOTS_DIR, filename)
+    if not os.path.exists(filepath):
+        filepath = os.path.join(IPAD_SCREENSHOTS_DIR, filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(filepath, filename=filename, media_type="image/png")
 
 @api_router.get("/screenshots/gallery")
 async def screenshots_gallery():
-    """HTML gallery page to preview and download all screenshots"""
-    if not os.path.exists(SCREENSHOTS_DIR):
-        return RedirectResponse("/api/screenshots")
-    files = sorted([f for f in os.listdir(SCREENSHOTS_DIR) if f.endswith('.png')])
+    """HTML gallery page to preview and download all screenshots (iPhone + iPad)"""
+    from fastapi.responses import HTMLResponse
     
-    previews = [f for f in files if 'preview' in f]
-    screenshots = [f for f in files if 'screenshot' in f]
+    iphone_files = sorted([f for f in os.listdir(SCREENSHOTS_DIR) if f.endswith('.png')]) if os.path.exists(SCREENSHOTS_DIR) else []
+    ipad_files = sorted([f for f in os.listdir(IPAD_SCREENSHOTS_DIR) if f.endswith('.png')]) if os.path.exists(IPAD_SCREENSHOTS_DIR) else []
     
     def make_card(f):
         name = f.replace('.png','').replace('_', ' ').title()
         return f'''
         <div style="background:#1e293b;border-radius:16px;padding:16px;text-align:center;max-width:280px;">
             <a href="/api/screenshots/download/{f}" target="_blank">
-                <img src="/api/screenshots/download/{f}" style="width:100%;border-radius:12px;border:2px solid #334155;" />
+                <img src="/api/screenshots/download/{f}" style="width:100%;border-radius:12px;border:2px solid #334155;" loading="lazy" />
             </a>
             <p style="color:#c5d93d;margin:12px 0 4px;font-weight:600;font-size:14px;">{name}</p>
             <a href="/api/screenshots/download/{f}" download="{f}" 
                style="display:inline-block;background:#c5d93d;color:#0f172a;padding:8px 20px;border-radius:8px;
                       text-decoration:none;font-weight:700;font-size:13px;margin-top:8px;">
-                ⬇ Download
+                Download
             </a>
         </div>'''
     
+    iphone_previews = [f for f in iphone_files if 'preview' in f]
+    iphone_screenshots = [f for f in iphone_files if 'screenshot' in f]
+    ipad_previews = [f for f in ipad_files if 'preview' in f]
+    ipad_screenshots = [f for f in ipad_files if 'screenshot' in f]
+    
     html = f'''<!DOCTYPE html>
-<html><head><title>BBA Tech - App Store Screenshots</title>
+<html><head><title>BBA Tech - App Store Assets</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
     body {{ background:#0f172a; color:white; font-family:-apple-system,BlinkMacSystemFont,sans-serif; padding:24px; margin:0; }}
     h1 {{ color:#c5d93d; text-align:center; }}
-    h2 {{ color:#94a3b8; border-bottom:1px solid #334155; padding-bottom:8px; }}
+    h2 {{ color:#94a3b8; border-bottom:1px solid #334155; padding-bottom:8px; margin-top:40px; }}
+    h3 {{ color:#64748b; margin-top:24px; }}
     .grid {{ display:flex; flex-wrap:wrap; gap:20px; justify-content:center; padding:16px 0; }}
-    .dl-all {{ display:block;text-align:center;margin:20px auto;background:#c5d93d;color:#0f172a;
-               padding:14px 32px;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;width:fit-content; }}
-</style></head><body>
-<h1>📱 BBA Tech — App Store Assets</h1>
-<p style="text-align:center;color:#94a3b8;">All images: 1242 × 2688px (iPhone XS Max / 11 Pro Max)</p>
+    .tabs {{ display:flex; justify-content:center; gap:12px; margin:24px 0; }}
+    .tab {{ padding:12px 28px; border-radius:10px; font-weight:700; cursor:pointer; font-size:15px; border:none; }}
+    .tab.active {{ background:#c5d93d; color:#0f172a; }}
+    .tab.inactive {{ background:#1e293b; color:#94a3b8; }}
+    .section {{ display:none; }}
+    .section.active {{ display:block; }}
+</style>
+<script>
+function showTab(id) {{
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => {{ t.classList.remove('active'); t.classList.add('inactive'); }});
+    document.getElementById(id).classList.add('active');
+    document.getElementById('tab-'+id).classList.remove('inactive');
+    document.getElementById('tab-'+id).classList.add('active');
+}}
+</script>
+</head><body>
+<h1>BBA Tech — App Store Assets</h1>
 <p style="text-align:center;color:#64748b;font-size:13px;">Click any image to preview full size. Click "Download" to save.</p>
 
-<h2>📱 3 App Previews</h2>
-<div class="grid">{"".join(make_card(f) for f in previews)}</div>
+<div class="tabs">
+    <button class="tab active" id="tab-iphone" onclick="showTab('iphone')">iPhone (1242x2688)</button>
+    <button class="tab inactive" id="tab-ipad" onclick="showTab('ipad')">iPad (2048x2732)</button>
+</div>
 
-<h2>📸 7 Screenshots</h2>
-<div class="grid">{"".join(make_card(f) for f in screenshots)}</div>
+<div id="iphone" class="section active">
+    <h2>iPhone — 3 App Previews</h2>
+    <div class="grid">{"".join(make_card(f) for f in iphone_previews)}</div>
+    <h2>iPhone — 7 Screenshots</h2>
+    <div class="grid">{"".join(make_card(f) for f in iphone_screenshots)}</div>
+</div>
+
+<div id="ipad" class="section">
+    <h2>iPad — 3 App Previews</h2>
+    <div class="grid">{"".join(make_card(f) for f in ipad_previews)}</div>
+    <h2>iPad — 7 Screenshots</h2>
+    <div class="grid">{"".join(make_card(f) for f in ipad_screenshots)}</div>
+</div>
 
 <p style="text-align:center;color:#475569;margin-top:40px;font-size:12px;">
-    Total: {len(files)} files | Right-click → "Save Image As" or use the Download buttons
+    Total: {len(iphone_files)} iPhone + {len(ipad_files)} iPad = {len(iphone_files)+len(ipad_files)} files | No PII in iPad screenshots (demo account used)
 </p>
 </body></html>'''
     
-    from fastapi.responses import HTMLResponse
     return HTMLResponse(content=html)
 # === End Screenshot Endpoints ===
 
