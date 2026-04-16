@@ -168,111 +168,42 @@ class ServiceLogCreate(BaseModel):
     duration_minutes: Optional[int] = None
 
 # ============ Mock Data Generator ============
+# Mock data removed - now using live Salesforce data.
+# Equipment is stored locally in MongoDB since it's not in Salesforce.
 
-def generate_mock_data():
-    """Generate mock data simulating Salesforce data"""
+# Helper: Query Salesforce using stored session token
+async def sf_query(user_id: str, soql: str) -> list:
+    """Execute a SOQL query against Salesforce using the user's stored session."""
+    session = await db.sf_sessions.find_one({"user_id": user_id})
+    if not session:
+        return []
     
-    # Mock Technician
-    mock_technician = {
-        "id": "tech-001",
-        "salesforce_id": "003Dn00000AbCdEF",
-        "username": "john.smith",
-        "email": "john.smith@blueboxair.com",
-        "full_name": "John Smith",
-        "phone": "(555) 123-4567",
-        "skills": ["Coil Management", "Coil Cleaning", "Air Quality", "Bio-Automation Install", "Client Specialist", "Field Trainer", "Virtual Trainer", "Trouble Shoot Expert"],
-        "profile_image": None
-    }
+    access_token = session.get("access_token", "")
+    instance_url = session.get("instance_url", "")
+    if not access_token or not instance_url:
+        return []
     
-    # Mock Projects (from Salesforce)
-    now = datetime.utcnow()
-    mock_projects = [
-        {
-            "id": "proj-001", 
-            "salesforce_id": "a0B001", 
-            "project_number": "PRJ-2024-001",
-            "name": "Acme Corporate Tower - Coil Management",
-            "description": "Annual coil cleaning and management for all 12 floors",
-            "status": "Active",
-            "client_name": "Acme Corporation",
-            "address": "123 Main Street, New York, NY 10001",
-            "start_date": now - timedelta(days=5),
-            "end_date": now + timedelta(days=25),
-            "assigned_technician_id": "tech-001",
-            "equipment_count": 24,
-            "primary_contact": {
-                "name": "James Wilson",
-                "title": "Facilities Manager",
-                "phone": "+1 (212) 555-0147",
-                "email": "j.wilson@acmecorp.com"
-            }
-        },
-        {
-            "id": "proj-002", 
-            "salesforce_id": "a0B002", 
-            "project_number": "PRJ-2024-002",
-            "name": "Metro Hospital - Air Quality Assessment",
-            "description": "Critical air quality inspection and coil treatment",
-            "status": "Active",
-            "client_name": "Metro Healthcare",
-            "address": "789 Hospital Drive, Chicago, IL 60601",
-            "start_date": now,
-            "end_date": now + timedelta(days=10),
-            "assigned_technician_id": "tech-001",
-            "equipment_count": 36,
-            "primary_contact": {
-                "name": "Dr. Sarah Mitchell",
-                "title": "Chief of Operations",
-                "phone": "+1 (312) 555-0289",
-                "email": "s.mitchell@metrohealthcare.com"
-            }
-        },
-        {
-            "id": "proj-003", 
-            "salesforce_id": "a0B003", 
-            "project_number": "PRJ-2024-003",
-            "name": "Pacific Mall - Chiller Inspection",
-            "description": "Quarterly chiller inspection and enzyme treatment",
-            "status": "Active",
-            "client_name": "Pacific Retail Group",
-            "address": "321 Commerce Blvd, Seattle, WA 98101",
-            "start_date": now + timedelta(days=3),
-            "end_date": now + timedelta(days=7),
-            "assigned_technician_id": "tech-001",
-            "equipment_count": 8,
-            "primary_contact": {
-                "name": "Robert Chen",
-                "title": "Property Manager",
-                "phone": "+1 (206) 555-0193",
-                "email": "r.chen@pacificretail.com"
-            }
-        },
-    ]
-    
-    # Mock Equipment for projects
-    mock_equipment = [
-        # Project 1 equipment
-        {"id": "eq-001", "salesforce_id": "a1E001", "project_id": "proj-001", "name": "AHU-01 Floor 1", "model": "Carrier 39M", "serial_number": "CR39M001", "equipment_type": "AHU", "location": "Floor 1 Mechanical Room", "status": "Active"},
-        {"id": "eq-002", "salesforce_id": "a1E002", "project_id": "proj-001", "name": "AHU-02 Floor 2", "model": "Carrier 39M", "serial_number": "CR39M002", "equipment_type": "AHU", "location": "Floor 2 Mechanical Room", "status": "Active"},
-        {"id": "eq-003", "salesforce_id": "a1E003", "project_id": "proj-001", "name": "RTU-01 Roof", "model": "Trane Voyager", "serial_number": "TV12345", "equipment_type": "RTU", "location": "Rooftop", "status": "Active"},
-        {"id": "eq-004", "salesforce_id": "a1E004", "project_id": "proj-001", "name": "Chiller-01", "model": "York YCIV", "serial_number": "YK001", "equipment_type": "Chiller", "location": "Basement", "status": "Active"},
-        # Project 2 equipment
-        {"id": "eq-005", "salesforce_id": "a1E005", "project_id": "proj-002", "name": "OR-AHU-01", "model": "Carrier 39MN", "serial_number": "CR39MN001", "equipment_type": "AHU", "location": "OR Suite 1", "status": "Active"},
-        {"id": "eq-006", "salesforce_id": "a1E006", "project_id": "proj-002", "name": "ICU-AHU-01", "model": "Carrier 39MN", "serial_number": "CR39MN002", "equipment_type": "AHU", "location": "ICU", "status": "Active"},
-        # Project 3 equipment
-        {"id": "eq-007", "salesforce_id": "a1E007", "project_id": "proj-003", "name": "Chiller-Main", "model": "Trane CVHF", "serial_number": "TCV001", "equipment_type": "Chiller", "location": "Central Plant", "status": "Active"},
-        {"id": "eq-008", "salesforce_id": "a1E008", "project_id": "proj-003", "name": "Chiller-Backup", "model": "Trane CVHF", "serial_number": "TCV002", "equipment_type": "Chiller", "location": "Central Plant", "status": "Active"},
-    ]
-    
-    return {
-        "technician": mock_technician,
-        "projects": mock_projects,
-        "equipment": mock_equipment,
-    }
+    api_version = os.environ.get('SALESFORCE_API_VERSION', 'v59.0')
+    try:
+        async with httpx.AsyncClient() as client_http:
+            response = await client_http.get(
+                f"{instance_url}/services/data/{api_version}/query",
+                params={"q": soql},
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+                timeout=30.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("records", [])
+            else:
+                logging.warning(f"Salesforce query failed ({response.status_code}): {response.text[:200]}")
+                return []
+    except Exception as e:
+        logging.error(f"Salesforce query error: {e}")
+        return []
 
 # Store for current session
-MOCK_DATA = generate_mock_data()
-current_technician_id = "tech-001"
+current_technician_id = None
 
 # ============ Auth Routes ============
 
@@ -541,27 +472,11 @@ async def login(credentials: TechnicianLogin):
             "source": "salesforce_profile",
         }
     
-    # Final fallback: Mock login for development
-    technician = MOCK_DATA["technician"].copy()
-    
-    # Check if this user has completed profile setup
-    email = technician.get("email", "")
-    try:
-        existing_profile = await db.profiles.find_one({"email": email, "profile_completed": True})
-        technician["profile_completed"] = existing_profile is not None
-    except Exception as profile_err:
-        logging.error(f"Profile check error: {profile_err}")
-        technician["profile_completed"] = False
-    
-    logging.warning(f"MOCK LOGIN: email={email}, profile_completed={technician.get('profile_completed')}, keys={list(technician.keys())}")
-    
-    return {
-        "success": True,
-        "message": "Login successful (Demo mode - use Salesforce credentials for live access)",
-        "technician": technician,
-        "token": "mock-jwt-token-" + str(uuid.uuid4()),
-        "source": "mock",
-    }
+    # Final fallback: No valid login found
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid Salesforce credentials. Please use your Salesforce username and password to log in."
+    )
 
 @api_router.get("/auth/salesforce/init")
 async def salesforce_oauth_init(redirect_uri: str = ""):
@@ -1936,28 +1851,70 @@ async def get_field_mappings():
 
 @api_router.get("/projects")
 async def get_projects(status: Optional[str] = None):
-    """Get all projects assigned to the technician"""
-    projects = MOCK_DATA["projects"].copy()
+    """Get all projects (Salesforce Opportunities + custom DB projects)"""
+    all_projects = []
     
-    # Convert datetime objects for JSON serialization
-    for proj in projects:
-        if proj.get("start_date"):
-            proj["start_date"] = proj["start_date"].isoformat() if isinstance(proj["start_date"], datetime) else proj["start_date"]
-        if proj.get("end_date"):
-            proj["end_date"] = proj["end_date"].isoformat() if isinstance(proj["end_date"], datetime) else proj["end_date"]
+    # 1. Fetch Opportunities from Salesforce via stored sessions
+    try:
+        # Find the latest SF session
+        session = await db.sf_sessions.find_one({}, sort=[("updated_at", -1)])
+        if session:
+            records = await sf_query(
+                session["user_id"],
+                "SELECT Id, Name, StageName, Description, Amount, CreatedDate, CloseDate, "
+                "Account.Name, OwnerId, Owner.Name "
+                "FROM Opportunity ORDER BY CreatedDate DESC LIMIT 100"
+            )
+            for r in records:
+                proj = {
+                    "id": r.get("Id", ""),
+                    "salesforce_id": r.get("Id", ""),
+                    "name": r.get("Name", ""),
+                    "description": r.get("Description", "") or "",
+                    "status": r.get("StageName", "Open"),
+                    "client_name": r.get("Account", {}).get("Name", "") if r.get("Account") else "",
+                    "amount": r.get("Amount"),
+                    "start_date": r.get("CreatedDate", ""),
+                    "end_date": r.get("CloseDate", ""),
+                    "assigned_technician_id": r.get("OwnerId", ""),
+                    "owner_name": r.get("Owner", {}).get("Name", "") if r.get("Owner") else "",
+                    "equipment_count": 0,
+                    "source": "salesforce",
+                }
+                all_projects.append(proj)
+    except Exception as e:
+        logging.error(f"Error fetching SF Opportunities: {e}")
     
-    # Also get custom projects from DB
-    custom_projects = await db.custom_projects.find().to_list(100)
-    for cp in custom_projects:
-        cp["id"] = str(cp["_id"])
-        del cp["_id"]
-        projects.append(cp)
+    # 2. Also get synced opportunities from DB (from background sync)
+    try:
+        synced = await db.sf_opportunities.find({}).to_list(200)
+        synced_ids = set(p.get("salesforce_id", "") for p in all_projects)
+        for opp in synced:
+            sid = opp.get("salesforce_id", "")
+            if sid and sid not in synced_ids:
+                opp["id"] = str(opp.get("_id", sid))
+                opp.pop("_id", None)
+                opp["source"] = "salesforce_synced"
+                all_projects.append(opp)
+    except Exception as e:
+        logging.error(f"Error fetching synced opportunities: {e}")
     
-    # Apply filters
+    # 3. Get custom (manually created) projects from DB
+    try:
+        custom_projects = await db.custom_projects.find().to_list(100)
+        for cp in custom_projects:
+            cp["id"] = str(cp["_id"])
+            del cp["_id"]
+            cp["source"] = "manual"
+            all_projects.append(cp)
+    except Exception as e:
+        logging.error(f"Error fetching custom projects: {e}")
+    
+    # Apply status filter
     if status:
-        projects = [p for p in projects if p.get("status") == status]
+        all_projects = [p for p in all_projects if p.get("status", "").lower() == status.lower()]
     
-    return {"projects": projects, "total": len(projects)}
+    return {"projects": all_projects, "total": len(all_projects)}
 
 @api_router.post("/projects")
 async def create_project(data: dict = Body(...)):
@@ -2026,7 +1983,53 @@ async def create_project(data: dict = Body(...)):
 @api_router.get("/projects/{project_id}")
 async def get_project(project_id: str):
     """Get a specific project with all details"""
-    project = next((p for p in MOCK_DATA["projects"] if p["id"] == project_id), None)
+    # Check in custom projects first
+    try:
+        custom = await db.custom_projects.find_one({"id": project_id})
+        if custom:
+            custom["id"] = str(custom.get("_id", project_id))
+            custom.pop("_id", None)
+            return custom
+    except: pass
+    
+    # Check in synced opportunities
+    try:
+        synced = await db.sf_opportunities.find_one({"salesforce_id": project_id})
+        if synced:
+            synced["id"] = str(synced.get("_id", project_id))
+            synced.pop("_id", None)
+            return synced
+    except: pass
+    
+    # Try to query Salesforce directly
+    try:
+        session = await db.sf_sessions.find_one({}, sort=[("updated_at", -1)])
+        if session:
+            records = await sf_query(
+                session["user_id"],
+                f"SELECT Id, Name, StageName, Description, Amount, CreatedDate, CloseDate, "
+                f"Account.Name, OwnerId, Owner.Name "
+                f"FROM Opportunity WHERE Id = '{project_id}' LIMIT 1"
+            )
+            if records:
+                r = records[0]
+                return {
+                    "id": r.get("Id", ""),
+                    "salesforce_id": r.get("Id", ""),
+                    "name": r.get("Name", ""),
+                    "description": r.get("Description", "") or "",
+                    "status": r.get("StageName", "Open"),
+                    "client_name": r.get("Account", {}).get("Name", "") if r.get("Account") else "",
+                    "amount": r.get("Amount"),
+                    "start_date": r.get("CreatedDate", ""),
+                    "end_date": r.get("CloseDate", ""),
+                    "owner_name": r.get("Owner", {}).get("Name", "") if r.get("Owner") else "",
+                    "source": "salesforce",
+                }
+    except Exception as e:
+        logging.error(f"SF project query error: {e}")
+    
+    raise HTTPException(status_code=404, detail="Project not found")
     
     # Also check custom projects in DB
     if not project:

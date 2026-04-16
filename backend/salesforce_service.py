@@ -75,24 +75,39 @@ class SalesforceConfig:
 
 FIELD_MAPPINGS = {
     "Project": {
-        "sf_object": "Project__c",  # Custom object API name in Salesforce
+        "sf_object": "Opportunity",  # Standard Salesforce Opportunity
         "fields": {
             "id": "Id",
             "salesforce_id": "Id",
-            "project_number": "Project_Number__c",
             "name": "Name",
-            "description": "Description__c",
-            "status": "Status__c",
-            "client_name": "Account__r.Name",
-            "address": "Site_Address__c",
-            "start_date": "Start_Date__c",
-            "end_date": "End_Date__c",
-            "assigned_technician_id": "Assigned_Technician__c",
-            "equipment_count": "Equipment_Count__c",
+            "description": "Description",
+            "status": "StageName",
+            "client_name": "Account.Name",
+            "start_date": "CreatedDate",
+            "end_date": "CloseDate",
+            "assigned_technician_id": "OwnerId",
+            "amount": "Amount",
+        }
+    },
+    "Technician": {
+        "sf_object": "User",  # Standard Salesforce User
+        "fields": {
+            "id": "Id",
+            "salesforce_id": "Id",
+            "username": "Username",
+            "email": "Email",
+            "full_name": "Name",
+            "first_name": "FirstName",
+            "last_name": "LastName",
+            "phone": "Phone",
+            "title": "Title",
+            "department": "Department",
+            "is_active": "IsActive",
+            "profile_photo": "SmallPhotoUrl",
         }
     },
     "Equipment": {
-        "sf_object": "Equipment__c",
+        "sf_object": "Equipment__c",  # Custom object - stored locally if not in Salesforce
         "fields": {
             "id": "Id",
             "salesforce_id": "Id",
@@ -135,28 +150,16 @@ FIELD_MAPPINGS = {
         }
     },
     "Photo": {
-        "sf_object": "ContentVersion",  # Salesforce Files
+        "sf_object": "ContentVersion",
         "fields": {
             "id": "Id",
-            "project_id": "Project__c",  # Custom field on ContentVersion or linked via ContentDocumentLink
+            "project_id": "Project__c",
             "equipment_id": "Equipment__c",
-            "image_data": "VersionData",  # Base64 body
+            "image_data": "VersionData",
             "photo_type": "Photo_Type__c",
             "caption": "Description",
         }
     },
-    "Technician": {
-        "sf_object": "Contact",  # Or User, depending on setup
-        "fields": {
-            "id": "Id",
-            "salesforce_id": "Id",
-            "username": "Username__c",
-            "email": "Email",
-            "full_name": "Name",
-            "phone": "Phone",
-            "skills": "Skills__c",
-        }
-    }
 }
 
 
