@@ -262,24 +262,34 @@ export default function LoginScreen() {
   const handleSalesforceLogin = async () => {
     setSfLoading(true);
     try {
-      // Build the Salesforce OAuth redirect URL
-      const redirectUrl = `${API_URL}/api/auth/salesforce/redirect`;
+      // First, get the Salesforce auth URL from the backend
+      const response = await fetch(`${API_URL}/api/auth/salesforce/init`);
+      const data = await response.json();
+      
+      if (!data.auth_url) {
+        Alert.alert('Error', 'Salesforce is not configured. Please contact your administrator.');
+        setSfLoading(false);
+        return;
+      }
+      
+      const authUrl = data.auth_url;
       
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        // On web, navigate directly to the OAuth redirect endpoint
-        window.location.href = redirectUrl;
+        // On web, navigate directly to Salesforce login
+        window.location.href = authUrl;
       } else {
-        // On native, open in browser
-        const supported = await Linking.canOpenURL(redirectUrl);
+        // On native, open Salesforce login in the browser
+        const supported = await Linking.canOpenURL(authUrl);
         if (supported) {
-          await Linking.openURL(redirectUrl);
+          await Linking.openURL(authUrl);
         } else {
-          Alert.alert('Error', 'Cannot open Salesforce login');
+          // Fallback: try opening anyway
+          await Linking.openURL(authUrl);
         }
       }
     } catch (error) {
       console.error('Salesforce OAuth error:', error);
-      Alert.alert('Error', 'Unable to initiate Salesforce login');
+      Alert.alert('Error', 'Unable to initiate Salesforce login. Please check your connection.');
       setSfLoading(false);
     }
   };
@@ -355,8 +365,8 @@ export default function LoginScreen() {
           await AsyncStorage.setItem('rememberMe', 'false');
         }
         
-        // Trigger Salesforce sync in the background (non-blocking) BEFORE navigation
-        if (data.token) {
+        // Trigger Salesforce sync only if logged in via Salesforce (non-blocking)
+        if (data.token && data.source === 'salesforce') {
           triggerSalesforceSync(data.token);
         }
         

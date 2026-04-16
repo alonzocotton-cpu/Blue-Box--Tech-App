@@ -20,6 +20,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as Linking from 'expo-linking';
 
 import { API_BASE_URL } from '../../utils/api';
 
@@ -175,6 +176,94 @@ export default function ProfileScreen() {
   };
 
   // Salesforce sync functions removed - now handled automatically on login
+  // But we add a manual "Connect to Salesforce" button for re-sync
+  const [sfSyncing, setSfSyncing] = useState(false);
+  const [sfConnected, setSfConnected] = useState(false);
+
+  useEffect(() => {
+    // Check if user is logged in via Salesforce
+    const checkSfConnection = async () => {
+      const source = await AsyncStorage.getItem('loginSource');
+      setSfConnected(source === 'salesforce');
+    };
+    checkSfConnection();
+  }, []);
+
+  const handleConnectSalesforce = async () => {
+    try {
+      // Fetch the Salesforce OAuth authorization URL
+      const response = await fetch(`${API_URL}/api/auth/salesforce/init`);
+      const data = await response.json();
+      
+      if (!data.auth_url) {
+        Alert.alert('Error', 'Salesforce is not configured. Please contact your administrator.');
+        return;
+      }
+      
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.location.href = data.auth_url;
+      } else {
+        await Linking.openURL(data.auth_url);
+      }
+    } catch (error) {
+      console.error('SF connect error:', error);
+      Alert.alert('Error', 'Unable to connect to Salesforce');
+    }
+  };
+
+  const handleSyncSalesforce = async () => {
+    setSfSyncing(true);
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'Please login first');
+        setSfSyncing(false);
+        return;
+      }
+      
+      const syncUrls = [
+        `${API_URL}/api/salesforce/sync-profile?token=${encodeURIComponent(token)}`,
+        `${API_URL}/api/salesforce/sync-users?token=${encodeURIComponent(token)}`,
+        `${API_URL}/api/salesforce/sync-opportunities?token=${encodeURIComponent(token)}`,
+      ];
+      
+      const results = await Promise.allSettled(syncUrls.map(url => fetch(url)));
+      
+      // Check if any succeeded
+      const anySuccess = results.some(r => r.status === 'fulfilled' && (r.value as Response).ok);
+      
+      if (anySuccess) {
+        Alert.alert('Success', 'Salesforce data synced successfully!');
+        // Reload profile to reflect synced data
+        loadProfile();
+      } else {
+        // Check if it's an auth issue
+        const firstResult = results[0];
+        if (firstResult.status === 'fulfilled') {
+          const resp = firstResult.value as Response;
+          if (resp.status === 401) {
+            Alert.alert(
+              'Session Expired', 
+              'Your Salesforce session has expired. Please reconnect.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Reconnect', onPress: handleConnectSalesforce },
+              ]
+            );
+          } else {
+            Alert.alert('Error', 'Sync failed. Please try reconnecting to Salesforce.');
+          }
+        } else {
+          Alert.alert('Error', 'Sync failed. Please check your connection.');
+        }
+      }
+    } catch (error) {
+      console.error('SF sync error:', error);
+      Alert.alert('Error', 'Unable to sync Salesforce data');
+    } finally {
+      setSfSyncing(false);
+    }
+  };
 
   const pickProfilePhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -827,6 +916,57 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
+              {/* Salesforce Connection Section */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>SALESFORCE</Text>
+                <View style={styles.sectionContent}>
+                  {sfConnected ? (
+                    <>
+                      <View style={styles.sfConnectedBanner}>
+                        <View style={styles.sfConnectedRow}>
+                          <Ionicons name="checkmark-circle" size={20} color={COLORS.green} />
+                          <Text style={styles.sfConnectedText}>Connected to Salesforce</Text>
+                        </View>
+                        {technician?.source === 'salesforce' && (
+                          <Text style={styles.sfConnectedEmail}>{technician?.email}</Text>
+                        )}
+                      </View>
+                      <TouchableOpacity
+                        style={styles.sfSyncButton}
+                        onPress={handleSyncSalesforce}
+                        disabled={sfSyncing}
+                      >
+                        {sfSyncing ? (
+                          <ActivityIndicator size="small" color={COLORS.lime} />
+                        ) : (
+                          <>
+                            <Ionicons name="sync-outline" size={20} color={COLORS.lime} />
+                            <Text style={styles.sfSyncButtonText}>Sync Data Now</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.sfDisconnectedBanner}>
+                        <Ionicons name="cloud-offline-outline" size={20} color={COLORS.gray} />
+                        <Text style={styles.sfDisconnectedText}>Not connected to Salesforce</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.sfConnectButton}
+                        onPress={handleConnectSalesforce}
+                      >
+                        <Ionicons name="cloud-outline" size={20} color={COLORS.navy} />
+                        <Text style={styles.sfConnectButtonText}>Connect to Salesforce</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.sfHelpText}>
+                        Sign in with your Salesforce credentials to sync projects, equipment, and team data.
+                      </Text>
+                    </>
+                  )}
+                </View>
+              </View>
+
               {/* Support Section */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>SUPPORT</Text>
@@ -1277,6 +1417,78 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 24,
     paddingHorizontal: 20,
+  },
+  sfConnectedBanner: {
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  sfConnectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sfConnectedText: {
+    color: COLORS.green,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sfConnectedEmail: {
+    color: COLORS.gray,
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 28,
+  },
+  sfSyncButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197, 217, 61, 0.15)',
+    borderRadius: 10,
+    paddingVertical: 12,
+    gap: 8,
+    marginTop: 4,
+  },
+  sfSyncButtonText: {
+    color: COLORS.lime,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sfDisconnectedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  sfDisconnectedText: {
+    color: COLORS.gray,
+    fontSize: 14,
+  },
+  sfConnectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.lime,
+    borderRadius: 10,
+    paddingVertical: 14,
+    gap: 8,
+    marginBottom: 8,
+  },
+  sfConnectButtonText: {
+    color: COLORS.navy,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  sfHelpText: {
+    color: COLORS.grayDark,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 8,
   },
   footerText: {
     fontSize: 14,
