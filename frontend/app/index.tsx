@@ -13,6 +13,7 @@ import {
   Image,
   Animated,
   Dimensions,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -55,12 +56,14 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sfLoading, setSfLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
   const [autoLoginChecked, setAutoLoginChecked] = useState(false);
   const [showSplashVideo, setShowSplashVideo] = useState(false);
+  const [showCredentialForm, setShowCredentialForm] = useState(false);
   const videoRef = useRef<any>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const textFadeAnim = useRef(new Animated.Value(0)).current;
@@ -256,6 +259,31 @@ export default function LoginScreen() {
     }
   };
 
+  const handleSalesforceLogin = async () => {
+    setSfLoading(true);
+    try {
+      // Build the Salesforce OAuth redirect URL
+      const redirectUrl = `${API_URL}/api/auth/salesforce/redirect`;
+      
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        // On web, navigate directly to the OAuth redirect endpoint
+        window.location.href = redirectUrl;
+      } else {
+        // On native, open in browser
+        const supported = await Linking.canOpenURL(redirectUrl);
+        if (supported) {
+          await Linking.openURL(redirectUrl);
+        } else {
+          Alert.alert('Error', 'Cannot open Salesforce login');
+        }
+      }
+    } catch (error) {
+      console.error('Salesforce OAuth error:', error);
+      Alert.alert('Error', 'Unable to initiate Salesforce login');
+      setSfLoading(false);
+    }
+  };
+
   const handleGoogleLogin = async () => {
     // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
     try {
@@ -399,7 +427,11 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <View style={styles.content}>
+        <ScrollView 
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Logo and Header */}
           <View style={styles.header}>
             <View style={styles.logoContainer}>
@@ -411,64 +443,105 @@ export default function LoginScreen() {
 
           {/* Login Form */}
           <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <Ionicons name="person-outline" size={22} color={COLORS.gray} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Username"
-                placeholderTextColor={COLORS.grayDark}
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={22} color={COLORS.gray} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor={COLORS.grayDark}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons 
-                  name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                  size={22} 
-                  color={COLORS.gray} 
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Remember Me */}
-            <TouchableOpacity 
-              style={styles.rememberMeContainer}
-              onPress={() => setRememberMe(!rememberMe)}
-            >
-              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                {rememberMe && <Ionicons name="checkmark" size={14} color={COLORS.navy} />}
-              </View>
-              <Text style={styles.rememberMeText}>Remember me</Text>
-            </TouchableOpacity>
-
-            {/* Login Button */}
+            {/* Primary: Salesforce OAuth Login */}
             <TouchableOpacity
-              style={[styles.loginButton, (loading || !username.trim() || !password.trim()) && styles.loginButtonDisabled]}
-              onPress={handleLogin}
-              disabled={loading || !username.trim() || !password.trim()}
+              style={styles.sfLoginButton}
+              onPress={handleSalesforceLogin}
+              disabled={sfLoading}
             >
-              {loading ? (
+              {sfLoading ? (
                 <ActivityIndicator color={COLORS.navy} />
               ) : (
                 <>
-                  <Ionicons name="log-in-outline" size={22} color={COLORS.navy} />
-                  <Text style={styles.loginButtonText}>Login</Text>
+                  <Ionicons name="cloud-outline" size={22} color={COLORS.navy} />
+                  <Text style={styles.sfLoginButtonText}>Login with Salesforce</Text>
                 </>
               )}
             </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Expandable credential login */}
+            <TouchableOpacity 
+              style={styles.credentialToggle}
+              onPress={() => setShowCredentialForm(!showCredentialForm)}
+            >
+              <Ionicons name="key-outline" size={18} color={COLORS.gray} />
+              <Text style={styles.credentialToggleText}>Login with credentials</Text>
+              <Ionicons 
+                name={showCredentialForm ? "chevron-up" : "chevron-down"} 
+                size={18} 
+                color={COLORS.gray} 
+              />
+            </TouchableOpacity>
+
+            {showCredentialForm && (
+              <View style={styles.credentialForm}>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="person-outline" size={22} color={COLORS.gray} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Username"
+                    placeholderTextColor={COLORS.grayDark}
+                    value={username}
+                    onChangeText={setUsername}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={22} color={COLORS.gray} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Password"
+                    placeholderTextColor={COLORS.grayDark}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons 
+                      name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                      size={22} 
+                      color={COLORS.gray} 
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Remember Me */}
+                <TouchableOpacity 
+                  style={styles.rememberMeContainer}
+                  onPress={() => setRememberMe(!rememberMe)}
+                >
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                    {rememberMe && <Ionicons name="checkmark" size={14} color={COLORS.navy} />}
+                  </View>
+                  <Text style={styles.rememberMeText}>Remember me</Text>
+                </TouchableOpacity>
+
+                {/* Credential Login Button */}
+                <TouchableOpacity
+                  style={[styles.loginButton, (loading || !username.trim() || !password.trim()) && styles.loginButtonDisabled]}
+                  onPress={handleLogin}
+                  disabled={loading || !username.trim() || !password.trim()}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={COLORS.navy} />
+                  ) : (
+                    <>
+                      <Ionicons name="log-in-outline" size={22} color={COLORS.navy} />
+                      <Text style={styles.loginButtonText}>Login</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Alternative Login Options */}
             <View style={styles.alternativeLogins}>
@@ -507,7 +580,7 @@ export default function LoginScreen() {
               <Text style={styles.mockText}>Secured with Salesforce OAuth</Text>
             </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -522,7 +595,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     padding: 24,
     justifyContent: 'center',
   },
@@ -604,16 +677,47 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLORS.lime,
     borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: 14,
     gap: 10,
   },
   loginButtonDisabled: {
     opacity: 0.7,
   },
   loginButtonText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
     color: COLORS.navy,
+  },
+  sfLoginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.lime,
+    borderRadius: 12,
+    paddingVertical: 16,
+    gap: 10,
+    marginBottom: 4,
+  },
+  sfLoginButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.navy,
+  },
+  credentialToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+    marginBottom: 8,
+  },
+  credentialToggleText: {
+    fontSize: 14,
+    color: COLORS.gray,
+    fontWeight: '500',
+  },
+  credentialForm: {
+    marginBottom: 8,
   },
   credentialButton: {
     flexDirection: 'row',
