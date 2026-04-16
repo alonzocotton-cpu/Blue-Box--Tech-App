@@ -1213,26 +1213,7 @@ async def get_projects_kanban(email: str = "", view_all: bool = False):
         doc["source"] = "salesforce"
         all_projects.append(doc)
     
-    # Regular/local projects - include both mock data and custom DB projects
-    # Mock data (always include - these are assigned to the current user)
-    for p in MOCK_DATA.get("projects", []):
-        doc = dict(p)
-        # Ensure serializable dates
-        for dk in ["start_date", "end_date"]:
-            if dk in doc and isinstance(doc[dk], datetime):
-                doc[dk] = doc[dk].isoformat()
-        stage = (doc.get("stage") or doc.get("status") or "Active").strip()
-        stage_lower = stage.lower()
-        if stage_lower in ["completed", "closed won", "done"]:
-            doc["stage_category"] = "completed"
-        elif stage_lower in ["closed lost", "cancelled", "not completed", "inactive"]:
-            doc["stage_category"] = "not_completed"
-        else:
-            doc["stage_category"] = "in_progress"
-        doc["source"] = "local"
-        all_projects.append(doc)
-    
-    # Custom DB projects
+    # Custom DB projects (manually created in the app)
     async for p in db.custom_projects.find({}).sort("created_at", -1):
         doc = serialize_doc(p)
         stage = (doc.get("stage") or doc.get("status") or "Active").strip()
@@ -1587,31 +1568,54 @@ async def get_profile(token: str = ""):
             if profile:
                 return serialize_doc(profile)
     
-    # Try to get profile from DB by technician_id
-    profile = await db.profiles.find_one({"technician_id": MOCK_DATA["technician"]["id"]})
+    # Try to get the most recent profile from DB
+    profile = await db.profiles.find_one({}, sort=[("updated_at", -1)])
     if profile:
-        profile = serialize_doc(profile)
-        return profile
-    return MOCK_DATA["technician"]
+        return serialize_doc(profile)
+    
+    # No profile found at all
+    return {
+        "id": "unknown",
+        "full_name": "Technician",
+        "email": "",
+        "title": "Technician",
+        "company": "Blue Box Air, Inc.",
+        "skills": [],
+    }
 
 @api_router.put("/auth/profile")
 async def update_profile(profile_data: dict):
     """Update technician profile"""
-    technician_id = MOCK_DATA["technician"]["id"]
+    # Get technician_id from profile_data or find from DB
+    technician_id = profile_data.get("technician_id", "")
+    email = profile_data.get("email", "")
+    
+    if not technician_id and email:
+        existing = await db.profiles.find_one({"email": email})
+        if existing:
+            technician_id = existing.get("technician_id", str(existing.get("_id", "")))
+    
+    if not technician_id:
+        # Last resort: get the most recent profile
+        existing = await db.profiles.find_one({}, sort=[("updated_at", -1)])
+        technician_id = existing.get("technician_id", str(existing.get("_id", ""))) if existing else "unknown"
     
     allowed_fields = ["full_name", "first_name", "last_name", "email", "phone", "skills", "profile_photo", "title", "company", "position", "supervisor", "profile_completed"]
     update_data = {k: v for k, v in profile_data.items() if k in allowed_fields}
     update_data["technician_id"] = technician_id
     update_data["updated_at"] = datetime.utcnow().isoformat()
     
+    # Use email if available, otherwise technician_id for the match
+    match_query = {"email": email} if email else {"technician_id": technician_id}
     result = await db.profiles.update_one(
-        {"technician_id": technician_id},
+        match_query,
         {"$set": update_data},
         upsert=True
     )
     
-    # Merge with mock data for complete profile
-    merged = {**MOCK_DATA["technician"], **update_data}
+    # Fetch the updated profile
+    updated = await db.profiles.find_one(match_query)
+    merged = serialize_doc(updated) if updated else update_data
     return {"success": True, "profile": merged}
 
 @api_router.get("/auth/check-profile")
@@ -1640,12 +1644,21 @@ async def setup_profile(profile_data: dict):
     
     full_name = f"{first_name} {last_name}"
     
+    # Determine technician_id: use email-based lookup or generate
+    technician_id = ""
+    if email:
+        existing = await db.profiles.find_one({"email": email})
+        if existing:
+            technician_id = existing.get("technician_id", str(existing.get("_id", "")))
+    if not technician_id:
+        technician_id = f"tech-{uuid.uuid4().hex[:8]}"
+    
     profile = {
-        "technician_id": MOCK_DATA["technician"]["id"],
+        "technician_id": technician_id,
         "first_name": first_name,
         "last_name": last_name,
         "full_name": full_name,
-        "email": email or MOCK_DATA["technician"].get("email", ""),
+        "email": email,
         "phone": phone,
         "position": position,
         "title": position,
@@ -1664,7 +1677,8 @@ async def setup_profile(profile_data: dict):
     )
     
     # Return the complete technician data
-    technician = {**MOCK_DATA["technician"], **profile}
+    updated_profile = await db.profiles.find_one({"email": profile["email"]})
+    technician = serialize_doc(updated_profile) if updated_profile else profile
     return {
         "success": True,
         "message": f"Welcome to Blue Box Air, {first_name}!",
@@ -1685,7 +1699,7 @@ async def upload_media(media_data: dict):
         "thumbnail": media_data.get("thumbnail", ""),
         "caption": media_data.get("caption", ""),
         "duration": media_data.get("duration"),  # for videos
-        "technician_id": MOCK_DATA["technician"]["id"],
+        "technician_id": media_data.get("technician_id", "unknown"),
         "created_at": datetime.utcnow().isoformat(),
     }
     
@@ -1727,7 +1741,7 @@ async def share_project(project_id: str, share_data: dict):
     share_record = {
         "id": f"share-{uuid.uuid4().hex[:8]}",
         "project_id": project_id,
-        "shared_by": MOCK_DATA["technician"]["id"],
+        "shared_by": share_data.get("technician_id", "unknown"),
         "shared_with": share_data.get("technician_ids", []),
         "message": share_data.get("message", ""),
         "shared_at": datetime.utcnow().isoformat(),
@@ -2030,60 +2044,54 @@ async def get_project(project_id: str):
         logging.error(f"SF project query error: {e}")
     
     raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Also check custom projects in DB
-    if not project:
-        from bson import ObjectId
-        try:
-            custom = await db.custom_projects.find_one({"_id": ObjectId(project_id)})
-        except Exception:
-            custom = await db.custom_projects.find_one({"id": project_id})
-        if custom:
-            custom["id"] = str(custom["_id"])
-            del custom["_id"]
-            project = custom
-    
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Convert datetime for JSON
-    project = project.copy()
-    if project.get("start_date"):
-        project["start_date"] = project["start_date"].isoformat() if isinstance(project["start_date"], datetime) else project["start_date"]
-    if project.get("end_date"):
-        project["end_date"] = project["end_date"].isoformat() if isinstance(project["end_date"], datetime) else project["end_date"]
-    
-    # Get equipment for this project
-    equipment = [eq for eq in MOCK_DATA["equipment"] if eq["project_id"] == project_id]
-    
-    # Get related data from DB
-    readings = await db.readings.find({"project_id": project_id}).to_list(100)
-    photos = await db.photos.find({"project_id": project_id}).to_list(100)
-    service_logs = await db.service_logs.find({"project_id": project_id}).to_list(100)
-    
-    return {
-        "project": project,
-        "equipment": equipment,
-        "readings": serialize_doc(readings),
-        "photos": serialize_doc(photos),
-        "service_logs": serialize_doc(service_logs)
-    }
 
 # ============ Equipment Routes ============
 
 @api_router.get("/equipment/{project_id}")
 async def get_equipment(project_id: str):
     """Get all equipment for a project"""
-    equipment = [eq for eq in MOCK_DATA["equipment"] if eq["project_id"] == project_id]
+    equipment = []
+    
+    # Check sf_equipment linked via project's account
+    project = await db.sf_projects.find_one({"salesforce_id": project_id})
+    if not project:
+        try:
+            project = await db.sf_projects.find_one({"_id": ObjectId(project_id)})
+        except Exception:
+            project = await db.custom_projects.find_one({"id": project_id})
+    
+    if project:
+        account_name = project.get("client_name", "")
+        if account_name:
+            async for e in db.sf_equipment.find({"account_name": account_name}):
+                equipment.append(serialize_doc(e))
+    
+    # Also include locally added equipment
+    async for e in db.equipment.find({"project_id": project_id}):
+        equipment.append(serialize_doc(e))
+    
     return {"equipment": equipment}
 
 @api_router.get("/equipment/detail/{equipment_id}")
 async def get_equipment_detail(equipment_id: str):
     """Get equipment details with readings"""
-    equipment = next((eq for eq in MOCK_DATA["equipment"] if eq["id"] == equipment_id), None)
+    # Try SF equipment first
+    equipment = None
+    try:
+        equipment = await db.sf_equipment.find_one({"_id": ObjectId(equipment_id)})
+    except Exception:
+        equipment = await db.sf_equipment.find_one({"salesforce_id": equipment_id})
+    
+    if not equipment:
+        try:
+            equipment = await db.equipment.find_one({"_id": ObjectId(equipment_id)})
+        except Exception:
+            equipment = await db.equipment.find_one({"id": equipment_id})
     
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
+    
+    equipment = serialize_doc(equipment)
     
     # Get readings for this equipment
     readings = await db.readings.find({"equipment_id": equipment_id}).sort("timestamp", -1).to_list(50)
@@ -2306,32 +2314,38 @@ provide general HVAC/coil management guidance and note that the technician shoul
 async def generate_report(project_id: str):
     """Generate a project report with equipment readings comparison and photos link."""
     
-    project = next((p for p in MOCK_DATA["projects"] if p["id"] == project_id), None)
+    # Try to find project from SF projects
+    project = None
+    try:
+        project = await db.sf_projects.find_one({"_id": ObjectId(project_id)})
+    except Exception:
+        project = await db.sf_projects.find_one({"salesforce_id": project_id})
     
     # Also check custom projects in DB
     if not project:
-        from bson import ObjectId
         try:
             custom = await db.custom_projects.find_one({"_id": ObjectId(project_id)})
         except Exception:
             custom = await db.custom_projects.find_one({"id": project_id})
         if custom:
-            custom["id"] = str(custom["_id"])
-            del custom["_id"]
             project = custom
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Serialize project dates
-    project = project.copy()
-    if project.get("start_date"):
-        project["start_date"] = project["start_date"].isoformat() if isinstance(project["start_date"], datetime) else project["start_date"]
-    if project.get("end_date"):
-        project["end_date"] = project["end_date"].isoformat() if isinstance(project["end_date"], datetime) else project["end_date"]
+    # Serialize the project
+    project = serialize_doc(project)
+    if "_id" in project:
+        project["id"] = str(project.pop("_id"))
     
-    # Get equipment - check both mock and custom
-    equipment_list = [eq for eq in MOCK_DATA["equipment"] if eq["project_id"] == project_id]
+    # Get equipment for this project from SF and local DB
+    equipment_list = []
+    account_name = project.get("client_name", "")
+    if account_name:
+        async for e in db.sf_equipment.find({"account_name": account_name}):
+            eq_doc = serialize_doc(e)
+            eq_doc["id"] = str(eq_doc.get("_id", eq_doc.get("salesforce_id", "")))
+            equipment_list.append(eq_doc)
     
     # Also check DB for custom equipment
     custom_equipment = await db.equipment.find({"project_id": project_id}).to_list(100)
@@ -2409,7 +2423,7 @@ async def generate_report(project_id: str):
         "generated_at": datetime.utcnow().isoformat(),
         "salesforce_sync_status": get_salesforce_status(),
         "project": project,
-        "technician": MOCK_DATA["technician"],
+        "technician": project.get("assigned_tech_name", ""),
         "primary_contact": project.get("primary_contact"),
         "summary": {
             "total_equipment": len(equipment_list),
@@ -2428,7 +2442,24 @@ async def generate_report(project_id: str):
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats():
     """Get dashboard statistics"""
-    projects = MOCK_DATA["projects"]
+    # Count projects from SF-synced and custom DB
+    sf_project_count = await db.sf_projects.count_documents({})
+    custom_project_count = await db.custom_projects.count_documents({})
+    total_projects = sf_project_count + custom_project_count
+    
+    # Count by status from sf_projects
+    active_sf = await db.sf_projects.count_documents({"status": "Active"})
+    on_hold_sf = await db.sf_projects.count_documents({"status": "On Hold"})
+    completed_sf = await db.sf_projects.count_documents({"status": "Completed"})
+    
+    # Count by status from custom projects
+    active_custom = await db.custom_projects.count_documents({"status": "Active"})
+    on_hold_custom = await db.custom_projects.count_documents({"status": "On Hold"})
+    completed_custom = await db.custom_projects.count_documents({"status": "Completed"})
+    
+    # Total equipment (from SF-synced and local)
+    sf_equipment_count = await db.sf_equipment.count_documents({})
+    local_equipment_count = await db.equipment.count_documents({})
     
     # Count unique equipment serviced (has readings)
     unique_equipment = await db.readings.distinct("equipment_id")
@@ -2438,11 +2469,11 @@ async def get_dashboard_stats():
     total_readings = await db.readings.count_documents({})
     
     stats = {
-        "total_projects": len(projects),
-        "active": len([p for p in projects if p["status"] == "Active"]),
-        "on_hold": len([p for p in projects if p["status"] == "On Hold"]),
-        "completed": len([p for p in projects if p["status"] == "Completed"]),
-        "total_equipment": sum(p.get("equipment_count", 0) for p in projects),
+        "total_projects": total_projects,
+        "active": active_sf + active_custom,
+        "on_hold": on_hold_sf + on_hold_custom,
+        "completed": completed_sf + completed_custom,
+        "total_equipment": sf_equipment_count + local_equipment_count,
         "units_serviced": units_serviced,
         "total_readings": total_readings,
     }

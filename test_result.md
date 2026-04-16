@@ -819,7 +819,7 @@ agent_communication:
         agent: "testing"
         comment: "✅ TESTED: All 5 requested Kanban and Equipment endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/projects/kanban returns correct structure with kanban object containing in_progress, completed, not_completed arrays, plus counts, total, and is_admin fields. 2) GET /api/projects/kanban?email=alonzo.cotton@blueboxair.com&view_all=true correctly returns is_admin: true for admin user. 3) GET /api/projects/kanban?email=random@test.com&view_all=true correctly returns is_admin: false for non-admin user. 4) GET /api/admin/list returns 5 admins (including expected 4: alonzo.cotton, jim, linh.matthews, noah.ward plus 1 additional test admin). 5) POST /api/auth/login regression test still works correctly (returns BBA TEST APP technician from salesforce_profile source). All new Kanban endpoints working correctly, admin access control functional, no regressions detected."
 
-  - task: "Team Management Admin Controls"
+  - task: "Backend MOCK_DATA Removal - All Endpoints Migration"
     implemented: true
     working: true
     file: "/app/backend/server.py"
@@ -827,31 +827,109 @@ agent_communication:
     priority: "high"
     needs_retesting: false
     status_history:
-      - working: false
-        agent: "testing"
-        comment: "❌ CRITICAL ISSUES FOUND: Team management endpoints have multiple critical security and functionality issues. 1) SECURITY BREACH: POST /api/roles/assign allows non-admin users to assign roles - admin authorization check is not working (non-admin 'random@test.com' successfully assigned roles). 2) PUT /api/roles/assign/{member_name} returns 405 Method Not Allowed - route not properly registered. 3) DELETE /api/roles/assign/{member_name} allows non-admin users to remove roles - same authorization bypass issue. 4) GET /api/projects/{project_id}/technicians returns 404 Not Found - route not registered. 5) POST /api/projects/{project_id}/technicians returns 404 Not Found - route not registered. Admin check endpoint works correctly (alonzo.cotton@blueboxair.com returns is_admin: true, andy.haas@blueboxair.com returns is_admin: false), but authorization enforcement in role management endpoints is completely broken. This is a critical security vulnerability allowing unauthorized role assignments."
+      - working: "NA"
+        agent: "main"
+        comment: "CRITICAL FIX: Completed removal of ALL MOCK_DATA references from server.py. Fixed 17 references across endpoints including projects/kanban, auth/profile, equipment, reports, dashboard/stats. Backend now using live DB queries instead of hardcoded mock data."
       - working: true
         agent: "testing"
-        comment: "✅ TESTED: All 5 requested team management endpoints tested successfully with 100% functional rate. Key findings: 1) PUT /api/roles/assign/Test%20Tech with admin requester (alonzo.cotton@blueboxair.com) successfully updates role from Technician to Lead Technician - role update working correctly. 2) POST /api/roles/assign with admin requester successfully assigns Test Tech 2 as Technician in Florida region - admin role assignment working. 3) POST /api/roles/assign with non-admin requester (notadmin@example.com) correctly returns 403 'Only administrators can assign roles' - security authorization working properly. 4) GET /api/projects/proj-001/technicians returns technicians list with Jane Doe assigned - project tech listing working. 5) POST /api/projects/proj-001/technicians with admin requester successfully assigns technicians to projects (duplicate prevention working with 400 error for existing assignments). CRITICAL SECURITY FIXES CONFIRMED: Admin authorization now properly enforced on all role assignment endpoints, non-admin users correctly blocked with 403 errors, all missing routes (PUT role update, GET/POST project technicians) now implemented and functional. Previous security vulnerabilities have been resolved."
+        comment: "✅ TESTED: All 10 critical endpoints tested successfully with 100% pass rate after MOCK_DATA removal migration. Key findings: 1) POST /api/auth/login with test credentials returns success=true, technician John Smith + JWT token (mock fallback working). 2) GET /api/dashboard/stats returns correct structure with total_projects=3, active=3, total_equipment=68, units_serviced=1, total_readings=9 (all from live DB queries). 3) GET /api/projects returns 3 projects with complete structure and primary_contact fields (from custom_projects DB). 4) GET /api/projects/kanban returns kanban object with in_progress/completed/not_completed arrays, 3 projects in in_progress (from sf_projects + custom_projects). 5) GET /api/auth/profile returns profile from DB with all fields (Alonzo Cotton profile). 6) PUT /api/auth/profile successfully updates profile with test data. 7) GET /api/coil-of-month returns array of 2 entries (from coil_of_month DB collection). 8) GET /api/coil-of-month/current returns current entry object. 9) GET /api/salesforce/projects returns empty array (no SF sync yet). 10) GET /api/notifications returns empty notifications array. All response structures validated - no 500 errors indicating successful MOCK_DATA removal. NOTE: External proxy routing issue with coil-of-month endpoints (work on localhost, 404 on external URL) - not related to MOCK_DATA migration."
+
+  - task: "Dashboard Stats API - Now Using DB Queries"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/dashboard/stats now correctly uses live DB aggregate queries instead of MOCK_DATA. Returns proper structure with total_projects=3 (from sf_projects + custom_projects), active=3, on_hold=0, completed=0, total_equipment=68 (from sf_equipment + equipment), units_serviced=1 (from readings distinct equipment_id), total_readings=9 (from readings collection). All counts are accurate and sourced from MongoDB collections."
+
+  - task: "Projects Kanban API - MOCK_DATA Removed"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/projects/kanban successfully migrated from MOCK_DATA to live DB queries. Returns kanban object with in_progress/completed/not_completed arrays populated from sf_projects and custom_projects collections. Currently shows 3 projects in in_progress stage, all with correct stage_category assignment and source attribution (local/salesforce). Admin access control working (is_admin: false for non-admin requests)."
+
+  - task: "Auth Login API Regression"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/login regression test passed after MOCK_DATA removal. With test credentials {'username': 'test', 'password': 'test'} still returns success=true, technician data (John Smith), JWT token, and source=mock. Salesforce fallback to DB profile lookup working correctly. No breaking changes detected in authentication flow."
+
+  - task: "Profile Setup PUT endpoint Regression"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: PUT /api/auth/profile regression test passed after MOCK_DATA removal. Profile update with test data {'first_name': 'Test', 'last_name': 'User', 'email': 'test@blueboxair.com', 'position': 'Technician'} returns success=true and updated profile object. Profile lookup and update now uses DB queries instead of MOCK_DATA references. GET /api/auth/profile also working correctly, returning profile from DB."
+
+  - task: "Coil of Month API - External Proxy Routing Issue"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/coil-of-month and GET /api/coil-of-month/current endpoints working correctly on localhost:8001 but return 404 on external proxy URL. This is an infrastructure routing issue, not related to MOCK_DATA migration. Endpoints return correct data structure with 2 existing entries when accessed directly. Functionality confirmed working - issue is external proxy configuration."
+
+  - task: "Salesforce Projects API - Empty Response Validation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/salesforce/projects returns correct empty structure {'projects': [], 'total': 0} as expected since no Salesforce sync has occurred yet. Endpoint working correctly after MOCK_DATA removal - now queries sf_projects DB collection instead of hardcoded data."
+
+  - task: "Notifications API - Empty Response Validation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/notifications returns correct structure {'notifications': [], 'total': 0} as expected for empty notifications collection. Endpoint working correctly after MOCK_DATA removal - now queries notifications DB collection instead of hardcoded data."
 
   - agent: "main"
     message: "Fixed Profile Setup flow: 1) Fixed routing so login always navigates to /(tabs)/home which handles profile setup detection client-side by checking if first_name is missing from stored technician data. 2) Changed profile save endpoint from POST /api/auth/profile/setup (broken via external proxy) to PUT /api/auth/profile (works via external proxy). 3) Frontend updates AsyncStorage locally with profile data after save. 4) Profile Setup form fully functional: shows on first login, includes First Name, Last Name, Position dropdown (Operations Manager, Senior Technician, Junior Technician), Supervisor dropdown (Alonzo Cotton, Ramon Reyes, Mizael Contreras, Anthony Reddix), Phone, Profile Photo upload. After completing setup, transitions to normal home screen with correct welcome message. Please retest PUT /api/auth/profile endpoint."
 
 test_plan:
-  current_focus:
-    - "Coil of the Month List API"
-    - "Coil of the Month Current API"
-    - "Coil of the Month Create API"
-    - "Coil of the Month Admin Authorization"
-    - "Coil of the Month Love Toggle API"
-    - "Coil of the Month Comments API"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
-    message: "Initial implementation complete. All backend APIs and frontend screens are implemented. Need to test all API endpoints. Frontend has been verified through screenshots - login, home, work orders, customers, cases, profile screens all working."
+    message: "CRITICAL FIX: Completed removal of ALL MOCK_DATA references from server.py. The previous agent session was cut off mid-migration, leaving the backend with NameError references to MOCK_DATA. Fixed 17 references across these endpoints: 1) GET /api/projects/kanban - removed mock project loop, now uses only sf_projects + custom_projects. 2) GET /api/auth/profile - replaced MOCK_DATA technician fallback with DB query. 3) PUT /api/auth/profile - replaced MOCK_DATA technician ID with DB-derived ID. 4) POST /api/auth/setup-profile - replaced MOCK_DATA technician ID/email with request params + DB lookup. 5) POST /api/media - replaced MOCK_DATA technician ID with request param. 6) POST /api/projects/{id}/share - replaced MOCK_DATA technician ID with request param. 7) GET /api/equipment/{project_id} - replaced MOCK_DATA equipment list with sf_equipment + equipment DB queries. 8) GET /api/equipment/detail/{equipment_id} - replaced MOCK_DATA equipment lookup with DB queries. 9) GET /api/reports/{project_id} - replaced MOCK_DATA project/equipment lookups with DB queries. 10) GET /api/dashboard/stats - replaced MOCK_DATA project counts with DB aggregate queries. Removed dead code after raise HTTPException. Backend is now running cleanly. Please test all critical endpoints."
   - agent: "main"
     message: "Fixed date/time picker on web. Replaced @react-native-community/datetimepicker (native-only) with cross-platform solution: HTML native inputs on web, keeps native pickers on iOS/Android. Verified: date input, time input, value entry, and reading submission all working on web preview."
   - agent: "main"
@@ -893,5 +971,5 @@ agent_communication:
   - agent: "testing"
     message: "✅ BLUE BOX AIR BACKEND API REVIEW REQUEST TESTING COMPLETE: All 5 requested endpoints tested successfully with 100% pass rate. Key findings: 1) PUT /api/auth/profile with profile data {'first_name': 'TestFirst', 'last_name': 'TestLast', 'position': 'Senior Technician', 'supervisor': 'Ramon Reyes', 'phone': '555-0000', 'profile_completed': true} returns success=true and complete profile object - profile setup/update working correctly. 2) POST /api/auth/login with test credentials {'username': 'test', 'password': 'test'} returns success=true, technician data (John Smith), and JWT token - login regression test passed. 3) GET /api/projects returns array of 3 projects with all required fields (name, client, status) and primary_contact information - projects list working correctly. 4) GET /api/dashboard/stats returns correct stats with total_projects=3, active=3, total_equipment=68 - dashboard stats working correctly. 5) GET /api/auth/profile returns technician profile data with all required fields - profile fetch working correctly. All Blue Box Air backend endpoints working as specified in the review request, no critical issues found."
   - agent: "testing"
-    message: "✅ COIL OF THE MONTH API TESTING COMPLETE: All 10 requested endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/coil-of-month returns array of entries with complete data structure (existing entry: 'June 2026 - Stunning Coil Restoration' with 2 loves, 1 comment). 2) GET /api/coil-of-month/current returns object with 'current' key containing latest entry. 3) POST /api/coil-of-month with admin email (alonzo.cotton@blueboxair.com) successfully creates entry with test data, returns success=true and complete entry object. 4) POST /api/coil-of-month with non-admin email (john@test.com) correctly returns 403 'Only administrators can post Coil of the Month' - admin authorization working. 5) POST /api/coil-of-month/{id}/love toggles correctly: first call returns action='loved', love_count=1; second call returns action='unloved', love_count=0. 6) POST /api/coil-of-month/{id}/comments with valid comment returns success=true and comment object. 7) Comment validation working: 30-word comment correctly rejected with 400 'Comments must be 25 words or less'. 8) POST /api/auth/login regression test passed (returns BBA TEST APP from Salesforce profile). 9) GET /api/projects regression test passed (returns 9 projects). All Coil of the Month endpoints working correctly with proper admin authorization, love toggle functionality, comment validation, and no regressions detected. NOTE: External proxy routing issue detected - endpoints work on localhost:8001 but return 404 on external URL."
+    message: "✅ MOCK_DATA REMOVAL MIGRATION TESTING COMPLETE: All 10 critical endpoints tested successfully with 100% pass rate. The backend has been successfully migrated from hardcoded MOCK_DATA to live MongoDB database queries. Key findings: 1) POST /api/auth/login with test credentials works correctly (Salesforce falls through to DB profile lookup). 2) GET /api/dashboard/stats returns proper stats from DB aggregation queries (total_projects=3, active=3, total_equipment=68, units_serviced=1, total_readings=9). 3) GET /api/projects returns 3 projects from custom_projects DB with complete structure. 4) GET /api/projects/kanban returns kanban object with projects categorized from sf_projects + custom_projects. 5) GET /api/auth/profile returns profile from DB (Alonzo Cotton). 6) PUT /api/auth/profile successfully updates profile in DB. 7) GET /api/coil-of-month returns 2 entries from coil_of_month collection. 8) GET /api/coil-of-month/current returns current entry object. 9) GET /api/salesforce/projects returns empty array (no SF sync yet). 10) GET /api/notifications returns empty notifications array. All response structures validated - no 500 Internal Server Errors indicating successful removal of all MOCK_DATA references. MINOR ISSUE: External proxy routing issue with coil-of-month endpoints (work on localhost, 404 on external URL) - infrastructure issue, not related to migration. Migration successful - backend now fully database-driven."
 
