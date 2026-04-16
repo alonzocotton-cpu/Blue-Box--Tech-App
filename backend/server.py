@@ -119,6 +119,248 @@ async def screenshots_gallery():
     return HTMLResponse(content=html)
 # === End Screenshot Endpoints ===
 
+# === Privacy Policy & Terms ===
+@api_router.get("/privacy-policy")
+async def privacy_policy():
+    """Public privacy policy page for App Store compliance"""
+    from fastapi.responses import HTMLResponse
+    html = '''<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BBA Tech — Privacy Policy</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.7; }
+    .container { max-width: 800px; margin: 0 auto; padding: 40px 24px 80px; }
+    .logo { text-align: center; margin-bottom: 32px; }
+    .logo h1 { color: #c5d93d; font-size: 28px; }
+    .logo p { color: #94a3b8; font-size: 14px; }
+    h2 { color: #c5d93d; font-size: 20px; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #1e293b; }
+    h3 { color: #f8fafc; font-size: 16px; margin: 20px 0 8px; }
+    p, li { color: #cbd5e1; font-size: 15px; margin-bottom: 12px; }
+    ul { padding-left: 24px; margin-bottom: 16px; }
+    li { margin-bottom: 6px; }
+    .effective { text-align: center; color: #64748b; font-size: 13px; margin-bottom: 32px; }
+    .contact-box { background: #1e293b; border-radius: 12px; padding: 20px; margin-top: 24px; }
+    .contact-box p { color: #94a3b8; margin-bottom: 8px; }
+    .contact-box a { color: #c5d93d; text-decoration: none; }
+    .footer { text-align: center; color: #475569; font-size: 12px; margin-top: 48px; padding-top: 24px; border-top: 1px solid #1e293b; }
+</style>
+</head><body>
+<div class="container">
+
+<div class="logo">
+    <h1>BLUE BOX AIR</h1>
+    <p>Coil Management Solutions</p>
+</div>
+
+<h1 style="text-align:center;color:white;font-size:24px;margin-bottom:8px;">Privacy Policy</h1>
+<p class="effective">Effective Date: June 1, 2025 &nbsp;|&nbsp; Last Updated: June 1, 2025</p>
+
+<p>Blue Box Air, Inc. ("Blue Box Air," "we," "us," or "our") operates the BBA Tech mobile application (the "App"). This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use the App. Please read this policy carefully. By using the App, you agree to the collection and use of information in accordance with this policy.</p>
+
+<h2>1. Information We Collect</h2>
+
+<h3>a. Information You Provide</h3>
+<ul>
+    <li><strong>Account Information:</strong> When you log in via Salesforce, we receive your name, email address, job title, department, and profile photo from your Salesforce account.</li>
+    <li><strong>Profile Data:</strong> First name, last name, position, supervisor, phone number, and profile photo you provide during profile setup.</li>
+    <li><strong>Service Data:</strong> Equipment readings (differential pressure, airflow, temperature, humidity), service notes, timestamps, and photos you capture during field service work.</li>
+    <li><strong>Communications:</strong> Messages you send through the AI Chat assistant and comments on Coil of the Month posts.</li>
+</ul>
+
+<h3>b. Information Collected Automatically</h3>
+<ul>
+    <li><strong>Device Information:</strong> Device type, operating system version, and unique device identifiers.</li>
+    <li><strong>Usage Data:</strong> App feature usage, screens visited, and interaction patterns to improve the App experience.</li>
+    <li><strong>Authentication Tokens:</strong> Secure tokens from Salesforce OAuth to maintain your session.</li>
+</ul>
+
+<h3>c. Information from Third Parties</h3>
+<ul>
+    <li><strong>Salesforce:</strong> Project data (Opportunities), equipment records, team member information, and organizational data synced from your company's Salesforce instance.</li>
+</ul>
+
+<h2>2. How We Use Your Information</h2>
+<p>We use the information we collect to:</p>
+<ul>
+    <li>Authenticate your identity and maintain your session</li>
+    <li>Display projects, equipment, and service data assigned to you</li>
+    <li>Record and store pre/post service readings for equipment</li>
+    <li>Provide AI-powered troubleshooting assistance and report generation</li>
+    <li>Display organization charts and team information</li>
+    <li>Enable Coil of the Month community features</li>
+    <li>Send push notifications about project updates and assignments</li>
+    <li>Improve and optimize the App's performance and features</li>
+</ul>
+
+<h2>3. Third-Party Services</h2>
+<p>The App integrates with the following third-party services:</p>
+<ul>
+    <li><strong>Salesforce:</strong> We use Salesforce OAuth 2.0 with PKCE for secure authentication and to sync your company's project and equipment data. Your Salesforce credentials are never stored by the App — authentication is handled entirely by Salesforce. <a href="https://www.salesforce.com/company/privacy/" style="color:#c5d93d;">Salesforce Privacy Policy</a></li>
+    <li><strong>Anthropic (Claude AI):</strong> When you use the AI Assistant, your messages are processed by Anthropic's Claude language model to generate responses. Messages may be temporarily processed but are not used to train AI models. <a href="https://www.anthropic.com/privacy" style="color:#c5d93d;">Anthropic Privacy Policy</a></li>
+    <li><strong>MongoDB:</strong> Service data, readings, and app content are stored in secure MongoDB databases hosted on protected infrastructure.</li>
+</ul>
+
+<h2>4. Data Storage and Security</h2>
+<ul>
+    <li>All data is transmitted over HTTPS/TLS encrypted connections.</li>
+    <li>Authentication uses industry-standard OAuth 2.0 with PKCE (Proof Key for Code Exchange).</li>
+    <li>Salesforce access tokens are stored securely on the server and are never exposed to client-side code.</li>
+    <li>Biometric authentication data (Face ID/Touch ID) is handled entirely by your device's secure enclave and is never transmitted to our servers.</li>
+    <li>We implement commercially reasonable security measures to protect your data against unauthorized access, alteration, disclosure, or destruction.</li>
+</ul>
+
+<h2>5. Data Sharing</h2>
+<p>We do not sell, trade, or rent your personal information to third parties. We may share your information only in the following circumstances:</p>
+<ul>
+    <li><strong>Within your organization:</strong> Project data, readings, and service records are visible to authorized team members and supervisors within your Blue Box Air Salesforce organization.</li>
+    <li><strong>Service providers:</strong> We share data with third-party service providers (Salesforce, Anthropic) solely to operate the App's features as described above.</li>
+    <li><strong>Legal requirements:</strong> We may disclose your information if required by law, regulation, or legal process.</li>
+</ul>
+
+<h2>6. Data Retention</h2>
+<p>We retain your data for as long as your Blue Box Air account is active or as needed to provide the App's services. Service readings and project data are retained as part of your company's operational records. You may request deletion of your personal data by contacting us at the address below.</p>
+
+<h2>7. Your Rights</h2>
+<p>Depending on your jurisdiction, you may have the right to:</p>
+<ul>
+    <li>Access the personal data we hold about you</li>
+    <li>Request correction of inaccurate data</li>
+    <li>Request deletion of your personal data</li>
+    <li>Withdraw consent for data processing</li>
+    <li>Request a portable copy of your data</li>
+    <li>Opt out of certain data processing activities</li>
+</ul>
+<p>To exercise any of these rights, please contact us using the information below.</p>
+
+<h2>8. Children's Privacy</h2>
+<p>The App is not intended for use by individuals under the age of 18. We do not knowingly collect personal information from children. If you believe we have inadvertently collected information from a child, please contact us immediately.</p>
+
+<h2>9. Changes to This Policy</h2>
+<p>We may update this Privacy Policy from time to time. We will notify you of any material changes by updating the "Last Updated" date at the top of this policy and, where appropriate, through in-app notifications. Your continued use of the App after changes are posted constitutes your acceptance of the revised policy.</p>
+
+<h2>10. Contact Us</h2>
+<div class="contact-box">
+    <p>If you have any questions about this Privacy Policy or our data practices, please contact us:</p>
+    <p><strong>Blue Box Air, Inc.</strong></p>
+    <p>Email: <a href="mailto:privacy@blueboxair.com">privacy@blueboxair.com</a></p>
+    <p>Website: <a href="https://www.blueboxair.com">www.blueboxair.com</a></p>
+</div>
+
+<div class="footer">
+    <p>&copy; 2025 Blue Box Air, Inc. All rights reserved.</p>
+    <p>BBA Tech v1.0</p>
+</div>
+
+</div>
+</body></html>'''
+    return HTMLResponse(content=html)
+
+@api_router.get("/terms")
+async def terms_of_service():
+    """Public terms of service page"""
+    from fastapi.responses import HTMLResponse
+    html = '''<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BBA Tech — Terms of Service</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.7; }
+    .container { max-width: 800px; margin: 0 auto; padding: 40px 24px 80px; }
+    .logo { text-align: center; margin-bottom: 32px; }
+    .logo h1 { color: #c5d93d; font-size: 28px; }
+    .logo p { color: #94a3b8; font-size: 14px; }
+    h2 { color: #c5d93d; font-size: 20px; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #1e293b; }
+    p, li { color: #cbd5e1; font-size: 15px; margin-bottom: 12px; }
+    ul { padding-left: 24px; margin-bottom: 16px; }
+    li { margin-bottom: 6px; }
+    .effective { text-align: center; color: #64748b; font-size: 13px; margin-bottom: 32px; }
+    .contact-box { background: #1e293b; border-radius: 12px; padding: 20px; margin-top: 24px; }
+    .contact-box p { color: #94a3b8; margin-bottom: 8px; }
+    .contact-box a { color: #c5d93d; text-decoration: none; }
+    .footer { text-align: center; color: #475569; font-size: 12px; margin-top: 48px; padding-top: 24px; border-top: 1px solid #1e293b; }
+</style>
+</head><body>
+<div class="container">
+
+<div class="logo">
+    <h1>BLUE BOX AIR</h1>
+    <p>Coil Management Solutions</p>
+</div>
+
+<h1 style="text-align:center;color:white;font-size:24px;margin-bottom:8px;">Terms of Service</h1>
+<p class="effective">Effective Date: June 1, 2025 &nbsp;|&nbsp; Last Updated: June 1, 2025</p>
+
+<p>These Terms of Service ("Terms") govern your use of the BBA Tech mobile application ("App") provided by Blue Box Air, Inc. ("Blue Box Air," "we," "us," or "our"). By downloading, accessing, or using the App, you agree to be bound by these Terms.</p>
+
+<h2>1. Eligibility</h2>
+<p>The App is intended for authorized Blue Box Air employees, contractors, and partners with valid Salesforce credentials. You must be at least 18 years of age to use the App.</p>
+
+<h2>2. Account and Access</h2>
+<p>Access to the App requires authentication through your organization's Salesforce account. You are responsible for maintaining the confidentiality of your login credentials and for all activities that occur under your account. You must notify Blue Box Air immediately of any unauthorized use of your account.</p>
+
+<h2>3. Permitted Use</h2>
+<p>You may use the App solely for legitimate Blue Box Air business purposes, including:</p>
+<ul>
+    <li>Viewing and managing assigned projects and equipment</li>
+    <li>Recording pre/post service readings and equipment data</li>
+    <li>Using the AI assistant for troubleshooting guidance</li>
+    <li>Participating in Coil of the Month community features</li>
+    <li>Viewing team and organizational information</li>
+</ul>
+
+<h2>4. Prohibited Conduct</h2>
+<p>You agree not to:</p>
+<ul>
+    <li>Share your login credentials with unauthorized individuals</li>
+    <li>Use the App for any unlawful purpose</li>
+    <li>Attempt to gain unauthorized access to the App's systems or data</li>
+    <li>Reverse engineer, decompile, or disassemble any part of the App</li>
+    <li>Upload malicious content, viruses, or harmful code</li>
+    <li>Use the AI assistant to generate harmful, misleading, or inappropriate content</li>
+</ul>
+
+<h2>5. Data and Content</h2>
+<p>Service data, readings, and content you create through the App remain the property of Blue Box Air, Inc. You retain responsibility for the accuracy of data you enter. Blue Box Air reserves the right to moderate Coil of the Month submissions and comments.</p>
+
+<h2>6. AI Assistant Disclaimer</h2>
+<p>The AI assistant provides general guidance based on HVAC and coil management best practices. AI-generated responses are for informational purposes only and should not replace professional judgment, manufacturer specifications, or safety protocols. Always verify AI recommendations with your supervisor before taking action on critical equipment.</p>
+
+<h2>7. Intellectual Property</h2>
+<p>The App, including its design, code, logos, and content, is the property of Blue Box Air, Inc. and is protected by intellectual property laws. The Blue Box Air name, logo, and "BBA Tech" are trademarks of Blue Box Air, Inc.</p>
+
+<h2>8. Limitation of Liability</h2>
+<p>To the maximum extent permitted by law, Blue Box Air shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the App. The App is provided "as is" without warranties of any kind, express or implied.</p>
+
+<h2>9. Termination</h2>
+<p>Blue Box Air may suspend or terminate your access to the App at any time, with or without cause. Upon termination, your right to use the App ceases immediately.</p>
+
+<h2>10. Changes to Terms</h2>
+<p>We may modify these Terms at any time. Continued use of the App after changes constitutes acceptance of the revised Terms.</p>
+
+<h2>11. Governing Law</h2>
+<p>These Terms are governed by and construed in accordance with the laws of the United States and the state in which Blue Box Air, Inc. is incorporated, without regard to conflict of law provisions.</p>
+
+<h2>12. Contact</h2>
+<div class="contact-box">
+    <p>For questions about these Terms:</p>
+    <p><strong>Blue Box Air, Inc.</strong></p>
+    <p>Email: <a href="mailto:legal@blueboxair.com">legal@blueboxair.com</a></p>
+    <p>Website: <a href="https://www.blueboxair.com">www.blueboxair.com</a></p>
+</div>
+
+<div class="footer">
+    <p>&copy; 2025 Blue Box Air, Inc. All rights reserved.</p>
+    <p>BBA Tech v1.0</p>
+</div>
+
+</div>
+</body></html>'''
+    return HTMLResponse(content=html)
+# === End Privacy & Terms ===
+
 # Helper to convert MongoDB documents
 def serialize_doc(doc):
     """Convert MongoDB document to JSON-serializable dict"""
