@@ -295,24 +295,12 @@ export default function LoginScreen() {
   };
 
   const handleGoogleLogin = async () => {
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    try {
-      // For native app, we'll use a deep link scheme
-      const redirectUrl = Platform.OS === 'web' 
-        ? `${window.location.origin}/auth/callback` 
-        : 'fieldtechconnect://auth/callback';
-      const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-      
-      const supported = await Linking.canOpenURL(authUrl);
-      if (supported) {
-        await Linking.openURL(authUrl);
-      } else {
-        Alert.alert('Error', 'Cannot open Google login');
-      }
-    } catch (error) {
-      console.error('Google login error:', error);
-      Alert.alert('Error', 'Google login failed');
-    }
+    // Google OAuth not configured - inform user to use Salesforce login
+    Alert.alert(
+      'Google Login', 
+      'Google login is not available. Please use "Login with Salesforce" for authentication.',
+      [{ text: 'OK' }]
+    );
   };
 
   const triggerSalesforceSync = async (token: string) => {

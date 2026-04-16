@@ -22,7 +22,7 @@ import secrets
 from salesforce_service import salesforce, sf_config, get_salesforce_status, FIELD_MAPPINGS
 
 # Claude AI integration
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+import anthropic
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=True)
@@ -2342,11 +2342,21 @@ async def get_service_logs(project_id: str):
 
 # ============ Claude AI Integration ============
 
-LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+def get_anthropic_client():
+    """Get Anthropic client if API key is configured"""
+    if not ANTHROPIC_API_KEY:
+        return None
+    return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 @api_router.post("/ai/troubleshoot")
 async def ai_troubleshoot(data: dict):
     """AI Troubleshooting Assistant - Claude analyzes equipment issues and suggests fixes"""
+    client = get_anthropic_client()
+    if not client:
+        return {"response": "AI features require an Anthropic API key. Please configure ANTHROPIC_API_KEY in your environment."}
+    
     equipment_name = data.get("equipment_name", "")
     issue = data.get("issue", "")
     readings = data.get("readings", [])
@@ -2355,11 +2365,16 @@ async def ai_troubleshoot(data: dict):
     for r in readings:
         readings_text += f"- {r.get('type','')}: Pre={r.get('pre','N/A')}, Post={r.get('post','N/A')}, Unit={r.get('unit','')}\n"
     
-    session_id = f"troubleshoot-{uuid.uuid4().hex[:8]}"
-    chat = LlmChat(
-        api_key=LLM_KEY,
-        session_id=session_id,
-        system_message="""You are a Blue Box Air, Inc. expert coil management technician assistant. 
+    prompt = f"Equipment: {equipment_name}\nIssue: {issue}"
+    if readings_text:
+        prompt += f"\n\nCurrent Readings:\n{readings_text}"
+    prompt += "\n\nProvide troubleshooting steps and recommendations."
+    
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=1024,
+            system="""You are a Blue Box Air, Inc. expert coil management technician assistant. 
 You help field technicians troubleshoot equipment issues. You specialize in:
 - Coil cleaning and management
 - Differential pressure readings (inWC)
@@ -2368,16 +2383,13 @@ You help field technicians troubleshoot equipment issues. You specialize in:
 - Bio-Automation systems
 
 Provide clear, actionable troubleshooting steps. Be concise and practical. 
-Format your response with numbered steps when giving instructions."""
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    
-    prompt = f"Equipment: {equipment_name}\nIssue: {issue}"
-    if readings_text:
-        prompt += f"\n\nCurrent Readings:\n{readings_text}"
-    prompt += "\n\nProvide troubleshooting steps and recommendations."
-    
-    msg = UserMessage(text=prompt)
-    response = await chat.send_message(msg)
+Format your response with numbered steps when giving instructions.""",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        response = message.content[0].text
+    except Exception as e:
+        logging.error(f"Anthropic API error: {e}")
+        response = f"AI service temporarily unavailable. Please try again later."
     
     # Store in DB for history
     await db.ai_chats.insert_one({
@@ -2393,6 +2405,10 @@ Format your response with numbered steps when giving instructions."""
 @api_router.post("/ai/report-summary")
 async def ai_report_summary(data: dict):
     """Smart Report Summaries - Claude generates written summaries from readings data"""
+    client = get_anthropic_client()
+    if not client:
+        return {"summary": "AI features require an Anthropic API key. Please configure ANTHROPIC_API_KEY in your environment."}
+    
     project_name = data.get("project_name", "")
     equipment_reports = data.get("equipment_reports", [])
     
@@ -2409,24 +2425,30 @@ async def ai_report_summary(data: dict):
                 report_text += f"  - {comp['reading_type']}: Pre={pre_val}, Post={post_val}, Change={diff} {comp.get('unit','')} ({pct}%)\n"
         report_text += "\n"
     
-    session_id = f"report-{uuid.uuid4().hex[:8]}"
-    chat = LlmChat(
-        api_key=LLM_KEY,
-        session_id=session_id,
-        system_message="""You are a Blue Box Air, Inc. service report writer. Generate professional, concise service report summaries.
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=1024,
+            system="""You are a Blue Box Air, Inc. service report writer. Generate professional, concise service report summaries.
 Include: overview of work performed, key findings from readings, improvements achieved, and recommendations.
-Use a professional yet readable tone. Keep summaries under 200 words."""
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    
-    msg = UserMessage(text=f"Generate a service report summary for this data:\n\n{report_text}")
-    response = await chat.send_message(msg)
+Use a professional yet readable tone. Keep summaries under 200 words.""",
+            messages=[{"role": "user", "content": f"Generate a service report summary for this data:\n\n{report_text}"}]
+        )
+        response = message.content[0].text
+    except Exception as e:
+        logging.error(f"Anthropic API error: {e}")
+        response = "AI service temporarily unavailable. Please try again later."
     
     return {"summary": response}
 
 @api_router.post("/ai/chat")
 async def ai_chat(data: dict):
     """AI Chatbot - General assistant for Blue Box Air technicians"""
-    message = data.get("message", "")
+    client = get_anthropic_client()
+    if not client:
+        return {"response": "AI features require an Anthropic API key. Please configure ANTHROPIC_API_KEY in your environment.", "session_id": data.get("session_id", "")}
+    
+    message_text = data.get("message", "")
     session_id = data.get("session_id", f"chat-{uuid.uuid4().hex[:8]}")
     
     # Load chat history from DB
@@ -2434,10 +2456,18 @@ async def ai_chat(data: dict):
         {"session_id": session_id, "type": "chat"}
     ).sort("created_at", 1).to_list(50)
     
-    chat = LlmChat(
-        api_key=LLM_KEY,
-        session_id=session_id,
-        system_message="""You are the Blue Box Air, Inc. AI Assistant, specializing in coil management solutions.
+    # Build messages list with history
+    messages = []
+    for h in history:
+        role = h.get("role", "user")
+        messages.append({"role": role, "content": h.get("message", "")})
+    messages.append({"role": "user", "content": message_text})
+    
+    try:
+        result = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=1024,
+            system="""You are the Blue Box Air, Inc. AI Assistant, specializing in coil management solutions.
 You help technicians with:
 - Equipment troubleshooting and diagnostics
 - Coil cleaning procedures and best practices
@@ -2447,18 +2477,20 @@ You help technicians with:
 - FAQs about Blue Box Air processes
 
 Be helpful, concise, and professional. If you don't know something specific to Blue Box Air, 
-provide general HVAC/coil management guidance and note that the technician should verify with their supervisor."""
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+provide general HVAC/coil management guidance and note that the technician should verify with their supervisor.""",
+            messages=messages
+        )
+        response = result.content[0].text
+    except Exception as e:
+        logging.error(f"Anthropic API error: {e}")
+        response = "AI service temporarily unavailable. Please try again later."
     
-    msg = UserMessage(text=message)
-    response = await chat.send_message(msg)
-    
-    # Store chat message
+    # Store chat messages
     await db.ai_chats.insert_one({
         "type": "chat",
         "session_id": session_id,
         "role": "user",
-        "message": message,
+        "message": message_text,
         "created_at": datetime.utcnow().isoformat(),
     })
     await db.ai_chats.insert_one({
