@@ -1144,10 +1144,24 @@ async def sync_opportunities(token: str = ""):
 
 @api_router.get("/salesforce/projects")
 async def get_sf_projects():
-    """Get all Salesforce-synced projects"""
+    """Get all Salesforce-synced projects (filtered: excludes Proposal Sent / Closed Lost)"""
+    EXCLUDED_STAGES = ['Proposal Sent', 'Closed Lost', 'Closed Lost - No Commitment']
     projects = []
+    
+    # Get project IDs with technicians assigned
+    assigned_project_ids = set()
+    async for assignment in db.project_technicians.find({}, {"project_id": 1}):
+        assigned_project_ids.add(assignment.get("project_id", ""))
+    
     async for p in db.sf_projects.find().sort("synced_at", -1):
         p_doc = serialize_doc(p)
+        # Skip excluded stages
+        if p_doc.get("status", "") in EXCLUDED_STAGES:
+            continue
+        # Only include if technician assigned
+        pid = p_doc.get("salesforce_id") or str(p_doc.get("_id", ""))
+        if pid not in assigned_project_ids:
+            continue
         # Get equipment count for this project's account
         if p.get("client_name"):
             equip_count = await db.sf_equipment.count_documents({"account_name": p["client_name"]})
@@ -1166,11 +1180,19 @@ async def get_sf_equipment(account_name: str):
 @api_router.get("/projects/kanban")
 async def get_projects_kanban(email: str = "", view_all: bool = False):
     """Get all projects organized by stage for Kanban view.
+    Only includes projects with technicians assigned, excludes Proposal Sent / Closed Lost.
     Admins can set view_all=true to see all projects.
     Non-admins only see their own assigned projects.
     """
+    EXCLUDED_STAGES = ['Proposal Sent', 'Closed Lost', 'Closed Lost - No Commitment']
+    
     # Check if user is admin
     is_admin_user = await is_admin(email.lower()) if email else False
+    
+    # Get project IDs with technicians assigned
+    assigned_project_ids = set()
+    async for assignment in db.project_technicians.find({}, {"project_id": 1}):
+        assigned_project_ids.add(assignment.get("project_id", ""))
     
     # Build query - admins with view_all see everything, others see only assigned
     query: dict = {}
@@ -1185,17 +1207,26 @@ async def get_projects_kanban(email: str = "", view_all: bool = False):
     all_projects = []
     
     # SF projects - filter by assignment for non-admins
-    sf_query: dict = {}
+    sf_query_filter: dict = {}
     if not is_admin_user or not view_all:
         if email:
-            sf_query["$or"] = [
+            sf_query_filter["$or"] = [
                 {"owner_email": {"$regex": email, "$options": "i"}},
                 {"assigned_to_email": {"$regex": email, "$options": "i"}},
             ]
     
-    async for p in db.sf_projects.find(sf_query).sort("synced_at", -1):
+    async for p in db.sf_projects.find(sf_query_filter).sort("synced_at", -1):
         doc = serialize_doc(p)
         stage = (doc.get("stage") or doc.get("status") or "").strip()
+        
+        # Skip excluded stages
+        if stage in EXCLUDED_STAGES:
+            continue
+        
+        # Only include if technician assigned
+        pid = doc.get("salesforce_id") or str(doc.get("_id", ""))
+        if pid not in assigned_project_ids and doc.get("source") != "manual":
+            continue
         
         # Determine stage category
         stage_lower = stage.lower()
@@ -1865,19 +1896,26 @@ async def get_field_mappings():
 
 @api_router.get("/projects")
 async def get_projects(status: Optional[str] = None):
-    """Get all projects (Salesforce Opportunities + custom DB projects)"""
+    """Get all projects (Salesforce Opportunities + custom DB projects)
+    Only includes opportunities that have a project created (technician assigned)
+    and excludes Proposal Sent / Closed Lost stages."""
+    
+    # Stages to exclude
+    EXCLUDED_STAGES = ['Proposal Sent', 'Closed Lost', 'Closed Lost - No Commitment']
+    
     all_projects = []
     
     # 1. Fetch Opportunities from Salesforce via stored sessions
     try:
-        # Find the latest SF session
         session = await db.sf_sessions.find_one({}, sort=[("updated_at", -1)])
         if session:
+            # Exclude unwanted stages directly in SOQL
+            stage_filter = " AND ".join([f"StageName != '{s}'" for s in EXCLUDED_STAGES])
             records = await sf_query(
                 session["user_id"],
-                "SELECT Id, Name, StageName, Description, Amount, CreatedDate, CloseDate, "
-                "Account.Name, OwnerId, Owner.Name "
-                "FROM Opportunity ORDER BY CreatedDate DESC LIMIT 100"
+                f"SELECT Id, Name, StageName, Description, Amount, CreatedDate, CloseDate, "
+                f"Account.Name, OwnerId, Owner.Name "
+                f"FROM Opportunity WHERE {stage_filter} ORDER BY CreatedDate DESC LIMIT 200"
             )
             for r in records:
                 proj = {
@@ -1905,6 +1943,10 @@ async def get_projects(status: Optional[str] = None):
         synced_ids = set(p.get("salesforce_id", "") for p in all_projects)
         for opp in synced:
             sid = opp.get("salesforce_id", "")
+            opp_status = opp.get("status", "")
+            # Skip excluded stages
+            if opp_status in EXCLUDED_STAGES:
+                continue
             if sid and sid not in synced_ids:
                 opp["id"] = str(opp.get("_id", sid))
                 opp.pop("_id", None)
@@ -1913,7 +1955,22 @@ async def get_projects(status: Optional[str] = None):
     except Exception as e:
         logging.error(f"Error fetching synced opportunities: {e}")
     
-    # 3. Get custom (manually created) projects from DB
+    # 3. Also get from sf_projects (synced collection)
+    try:
+        synced_ids = set(p.get("salesforce_id", "") for p in all_projects)
+        async for sp in db.sf_projects.find().sort("synced_at", -1):
+            sid = sp.get("salesforce_id", "")
+            sp_status = sp.get("status", "")
+            if sp_status in EXCLUDED_STAGES:
+                continue
+            if sid and sid not in synced_ids:
+                sp = serialize_doc(sp)
+                sp["source"] = "salesforce_synced"
+                all_projects.append(sp)
+    except Exception as e:
+        logging.error(f"Error fetching sf_projects: {e}")
+    
+    # 4. Get custom (manually created) projects from DB - always include
     try:
         custom_projects = await db.custom_projects.find().to_list(100)
         for cp in custom_projects:
@@ -1924,7 +1981,30 @@ async def get_projects(status: Optional[str] = None):
     except Exception as e:
         logging.error(f"Error fetching custom projects: {e}")
     
-    # Apply status filter
+    # 5. Filter: Only include projects that have a technician assigned
+    # Get all project IDs that have technician assignments
+    assigned_project_ids = set()
+    try:
+        async for assignment in db.project_technicians.find({}, {"project_id": 1}):
+            assigned_project_ids.add(assignment.get("project_id", ""))
+    except Exception as e:
+        logging.error(f"Error fetching technician assignments: {e}")
+    
+    # Filter SF projects to only those with technicians assigned
+    # Always include manual/custom projects (they were explicitly created)
+    filtered_projects = []
+    for p in all_projects:
+        pid = p.get("id") or p.get("salesforce_id", "")
+        if p.get("source") == "manual":
+            # Always include manually created projects
+            filtered_projects.append(p)
+        elif pid in assigned_project_ids:
+            # SF project with technician assigned
+            filtered_projects.append(p)
+    
+    all_projects = filtered_projects
+    
+    # Apply status filter if provided
     if status:
         all_projects = [p for p in all_projects if p.get("status", "").lower() == status.lower()]
     
@@ -2496,21 +2576,47 @@ async def generate_report(project_id: str):
 
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats():
-    """Get dashboard statistics"""
-    # Count projects from SF-synced and custom DB
-    sf_project_count = await db.sf_projects.count_documents({})
+    """Get dashboard statistics (filtered: only projects with technicians, excludes Proposal Sent / Closed Lost)"""
+    EXCLUDED_STAGES = ['Proposal Sent', 'Closed Lost', 'Closed Lost - No Commitment']
+    
+    # Get project IDs with technicians assigned
+    assigned_project_ids = set()
+    async for assignment in db.project_technicians.find({}, {"project_id": 1}):
+        assigned_project_ids.add(assignment.get("project_id", ""))
+    
+    # Count SF projects that pass the filter
+    active_count = 0
+    on_hold_count = 0
+    completed_count = 0
+    total_filtered = 0
+    
+    async for p in db.sf_projects.find():
+        status = p.get("status", "")
+        if status in EXCLUDED_STAGES:
+            continue
+        pid = p.get("salesforce_id", "")
+        if pid not in assigned_project_ids:
+            continue
+        total_filtered += 1
+        status_lower = status.lower()
+        if status_lower in ["active", "equipment list", "technical validation"]:
+            active_count += 1
+        elif status_lower in ["on hold"]:
+            on_hold_count += 1
+        elif status_lower in ["completed", "closed won", "done"]:
+            completed_count += 1
+        else:
+            active_count += 1  # Default to active for unknown stages
+    
+    # Add custom projects (always count these)
+    custom_active = await db.custom_projects.count_documents({"status": {"$regex": "^active$", "$options": "i"}})
+    custom_on_hold = await db.custom_projects.count_documents({"status": {"$regex": "^on hold$", "$options": "i"}})
+    custom_completed = await db.custom_projects.count_documents({"status": {"$regex": "^completed$", "$options": "i"}})
     custom_project_count = await db.custom_projects.count_documents({})
-    total_projects = sf_project_count + custom_project_count
-    
-    # Count by status from sf_projects
-    active_sf = await db.sf_projects.count_documents({"status": "Active"})
-    on_hold_sf = await db.sf_projects.count_documents({"status": "On Hold"})
-    completed_sf = await db.sf_projects.count_documents({"status": "Completed"})
-    
-    # Count by status from custom projects
-    active_custom = await db.custom_projects.count_documents({"status": "Active"})
-    on_hold_custom = await db.custom_projects.count_documents({"status": "On Hold"})
-    completed_custom = await db.custom_projects.count_documents({"status": "Completed"})
+    total_filtered += custom_project_count
+    active_count += custom_active + (custom_project_count - custom_active - custom_on_hold - custom_completed)  # Default others to active
+    on_hold_count += custom_on_hold
+    completed_count += custom_completed
     
     # Total equipment (from SF-synced and local)
     sf_equipment_count = await db.sf_equipment.count_documents({})
@@ -2524,10 +2630,10 @@ async def get_dashboard_stats():
     total_readings = await db.readings.count_documents({})
     
     stats = {
-        "total_projects": total_projects,
-        "active": active_sf + active_custom,
-        "on_hold": on_hold_sf + on_hold_custom,
-        "completed": completed_sf + completed_custom,
+        "total_projects": total_filtered,
+        "active": active_count,
+        "on_hold": on_hold_count,
+        "completed": completed_count,
         "total_equipment": sf_equipment_count + local_equipment_count,
         "units_serviced": units_serviced,
         "total_readings": total_readings,
