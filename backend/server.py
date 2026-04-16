@@ -402,7 +402,83 @@ async def terms_of_service():
 </div>
 </body></html>'''
     return HTMLResponse(content=html)
-# === End Privacy & Terms ===
+
+@api_router.get("/support")
+async def support_page():
+    """Public support page for App Store compliance"""
+    html = '''<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>BBA Tech Support</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:0;background:#0f2744;color:#e2e8f0;}
+.container{max-width:700px;margin:0 auto;padding:24px 20px;}
+.header{text-align:center;padding:32px 0 24px;border-bottom:2px solid #c5d93d;}
+.header h1{color:#c5d93d;font-size:28px;margin:0 0 4px;}
+.header p{color:#94a3b8;font-size:14px;margin:0;}
+h2{color:#c5d93d;font-size:18px;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #1e3a5f;}
+p,li{line-height:1.7;font-size:15px;color:#cbd5e1;}
+a{color:#c5d93d;text-decoration:none;}
+a:hover{text-decoration:underline;}
+.card{background:#1a365d;border-radius:12px;padding:20px;margin:16px 0;}
+.card h3{color:#ffffff;margin:0 0 8px;font-size:16px;}
+.card p{margin:0;font-size:14px;}
+.footer{text-align:center;padding:24px 0;margin-top:32px;border-top:1px solid #1e3a5f;color:#64748b;font-size:12px;}
+</style></head><body><div class="container">
+<div class="header">
+    <h1>BBA Tech Support</h1>
+    <p>Blue Box Air, Inc. — Coil Management Solutions</p>
+</div>
+
+<h2>Contact Us</h2>
+<div class="card">
+    <h3>Email Support</h3>
+    <p>For technical issues, account questions, or general inquiries:</p>
+    <p style="margin-top:8px;"><a href="mailto:support@blueboxair.com">support@blueboxair.com</a></p>
+</div>
+
+<div class="card">
+    <h3>Phone</h3>
+    <p>Available Monday – Friday, 8:00 AM – 5:00 PM EST</p>
+    <p style="margin-top:8px;"><a href="tel:+1800000000">Contact Blue Box Air</a></p>
+</div>
+
+<h2>Frequently Asked Questions</h2>
+
+<div class="card">
+    <h3>How do I log in?</h3>
+    <p>BBA Tech uses your company Salesforce credentials. Tap "Login with Salesforce" on the login screen and enter your Salesforce username and password.</p>
+</div>
+
+<div class="card">
+    <h3>How do I record equipment readings?</h3>
+    <p>Navigate to a project, select an equipment unit, then use the Readings tab to enter Pre and Post service values for Differential Pressure (inWC) and Airflow (FPM).</p>
+</div>
+
+<div class="card">
+    <h3>How do I generate a service report?</h3>
+    <p>Open a project, go to the Report tab, and tap "Generate &amp; Share Report." The report will be uploaded to Salesforce and can be shared via email.</p>
+</div>
+
+<div class="card">
+    <h3>I forgot my password</h3>
+    <p>Since BBA Tech uses Salesforce authentication, please reset your password through your company's Salesforce portal or contact your administrator.</p>
+</div>
+
+<div class="card">
+    <h3>The app isn't loading my projects</h3>
+    <p>Ensure you have an active internet connection and a valid Salesforce session. Try logging out and back in. If the issue persists, contact support.</p>
+</div>
+
+<h2>App Information</h2>
+<p>Version: 1.0</p>
+<p>Developer: Blue Box Air, Inc.</p>
+<p>Website: <a href="https://www.blueboxair.com">www.blueboxair.com</a></p>
+
+<div class="footer">
+    <p>&copy; 2025–2026 Blue Box Air, Inc. All rights reserved.</p>
+    <p>BBA Tech v1.0</p>
+</div>
+
+</div></body></html>'''
+    return HTMLResponse(content=html)
+# === End Privacy & Terms & Support ===
 
 # Helper to convert MongoDB documents
 def serialize_doc(doc):
