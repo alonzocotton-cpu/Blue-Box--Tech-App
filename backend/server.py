@@ -18,6 +18,16 @@ import urllib.parse
 import hashlib
 import base64
 import secrets
+import io
+import tempfile
+
+# PDF generation
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.colors import HexColor
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
 # Salesforce integration
 from salesforce_service import salesforce, sf_config, get_salesforce_status, FIELD_MAPPINGS
@@ -2921,8 +2931,11 @@ async def generate_report(project_id: str):
     # Also check DB for custom equipment
     custom_equipment = await db.equipment.find({"project_id": project_id}).to_list(100)
     for ce in custom_equipment:
-        ce["id"] = str(ce["_id"])
+        original_id = ce.get("id", "")
+        mongo_id = str(ce["_id"])
         del ce["_id"]
+        ce["id"] = original_id or mongo_id
+        ce["_mongo_id"] = mongo_id
         equipment_list.append(ce)
     
     # Get all readings for this project
@@ -2943,7 +2956,9 @@ async def generate_report(project_id: str):
     
     equipment_reports = []
     for eq in equipment_list:
-        eq_readings = [r for r in all_readings if r.get("equipment_id") == eq["id"]]
+        eq_ids = {eq.get("id", ""), eq.get("_mongo_id", ""), eq.get("salesforce_id", "")}
+        eq_ids.discard("")
+        eq_readings = [r for r in all_readings if r.get("equipment_id") in eq_ids]
         
         comparisons = []
         for rt in reading_types:
@@ -3298,6 +3313,497 @@ async def add_comment(entry_id: str, data: dict):
         {"$push": {"comments": comment}}
     )
     return {"success": True, "comment": comment}
+
+
+# ============ REPORT GENERATION & SALESFORCE UPLOAD ============
+
+def _build_report_pdf(
+    project: dict,
+    equipment_reports: list,
+    unit_averages: list,
+    overall_averages: dict,
+    technician_name: str,
+    technician_email: str,
+    generated_at: str,
+) -> bytes:
+    """Generate a professional Blue Box Air branded PDF report and return as bytes."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        topMargin=0.5 * inch,
+        bottomMargin=0.5 * inch,
+        leftMargin=0.6 * inch,
+        rightMargin=0.6 * inch,
+    )
+
+    # Colors
+    navy = HexColor("#0f2744")
+    navy_light = HexColor("#1a365d")
+    lime = HexColor("#c5d93d")
+    white = HexColor("#ffffff")
+    gray = HexColor("#94a3b8")
+    dark_bg = HexColor("#0d2137")
+
+    # Styles
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name="BrandTitle", fontSize=22, fontName="Helvetica-Bold",
+        textColor=white, alignment=TA_CENTER, spaceAfter=2,
+    ))
+    styles.add(ParagraphStyle(
+        name="BrandTagline", fontSize=10, fontName="Helvetica",
+        textColor=lime, alignment=TA_CENTER, spaceAfter=12,
+    ))
+    styles.add(ParagraphStyle(
+        name="ReportTitle", fontSize=16, fontName="Helvetica-Bold",
+        textColor=white, spaceAfter=4,
+    ))
+    styles.add(ParagraphStyle(
+        name="ReportMeta", fontSize=9, fontName="Helvetica",
+        textColor=gray, spaceAfter=2,
+    ))
+    styles.add(ParagraphStyle(
+        name="SectionHead", fontSize=13, fontName="Helvetica-Bold",
+        textColor=lime, spaceBefore=16, spaceAfter=6,
+    ))
+    styles.add(ParagraphStyle(
+        name="BodyText2", fontSize=10, fontName="Helvetica",
+        textColor=white, spaceAfter=4,
+    ))
+    styles.add(ParagraphStyle(
+        name="FooterText", fontSize=8, fontName="Helvetica",
+        textColor=gray, alignment=TA_CENTER, spaceBefore=16,
+    ))
+
+    elements = []
+
+    # ---- Brand Header ----
+    elements.append(Paragraph("BLUE BOX AIR, INC.", styles["BrandTitle"]))
+    elements.append(Paragraph("Coil Management Solutions", styles["BrandTagline"]))
+    elements.append(Spacer(1, 8))
+
+    # ---- Report Meta ----
+    elements.append(Paragraph(f"<b>{project.get('name', 'Service Report')}</b>", styles["ReportTitle"]))
+    elements.append(Paragraph(f"Client: {project.get('client_name', 'N/A')}", styles["ReportMeta"]))
+    if project.get("address"):
+        elements.append(Paragraph(f"Location: {project['address']}", styles["ReportMeta"]))
+    elements.append(Paragraph(f"Status: {project.get('status', 'N/A')}", styles["ReportMeta"]))
+    elements.append(Spacer(1, 4))
+    elements.append(Paragraph(f"Prepared by: {technician_name} ({technician_email})", styles["ReportMeta"]))
+    elements.append(Paragraph(f"Date Completed: {generated_at}", styles["ReportMeta"]))
+    elements.append(Spacer(1, 12))
+
+    # ---- Per-Unit Averages Table ----
+    elements.append(Paragraph("AVERAGE READINGS PER UNIT", styles["SectionHead"]))
+
+    if unit_averages:
+        header = ["Unit Name", "Avg DP Drop (inWC)", "Avg Airflow Increase (FPM)"]
+        table_data = [header]
+        for ua in unit_averages:
+            dp_val = f"{ua['avg_pressure_drop']:.2f}" if ua["avg_pressure_drop"] is not None else "—"
+            af_val = f"{ua['avg_airflow_increase']:.2f}" if ua["avg_airflow_increase"] is not None else "—"
+            table_data.append([ua["equipment_name"], dp_val, af_val])
+
+        t = Table(table_data, colWidths=[3.0 * inch, 2.0 * inch, 2.2 * inch])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), navy_light),
+            ("TEXTCOLOR", (0, 0), (-1, 0), lime),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE", (0, 1), (-1, -1), 9),
+            ("TEXTCOLOR", (0, 1), (-1, -1), white),
+            ("BACKGROUND", (0, 1), (-1, -1), dark_bg),
+            ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("GRID", (0, 0), (-1, -1), 0.5, navy_light),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [dark_bg, navy]),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(t)
+    else:
+        elements.append(Paragraph("No equipment readings recorded.", styles["BodyText2"]))
+
+    elements.append(Spacer(1, 16))
+
+    # ---- Overall Averages ----
+    elements.append(Paragraph("OVERALL PROJECT AVERAGES", styles["SectionHead"]))
+
+    overall_dp = overall_averages.get("avg_pressure_drop")
+    overall_af = overall_averages.get("avg_airflow_increase")
+
+    overall_data = [
+        ["Metric", "Value"],
+        [
+            "Avg Decrease in Differential Pressure (all units)",
+            f"{overall_dp:.2f} inWC" if overall_dp is not None else "No data",
+        ],
+        [
+            "Avg Increase in Airflow (all units)",
+            f"{overall_af:.2f} FPM" if overall_af is not None else "No data",
+        ],
+    ]
+    ot = Table(overall_data, colWidths=[4.5 * inch, 2.7 * inch])
+    ot.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), navy_light),
+        ("TEXTCOLOR", (0, 0), (-1, 0), lime),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 1), (-1, -1), 10),
+        ("TEXTCOLOR", (0, 1), (-1, -1), white),
+        ("BACKGROUND", (0, 1), (-1, -1), dark_bg),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.5, navy_light),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(ot)
+
+    elements.append(Spacer(1, 16))
+
+    # ---- Detailed Equipment Breakdown ----
+    elements.append(Paragraph("DETAILED EQUIPMENT READINGS", styles["SectionHead"]))
+
+    for eq_report in equipment_reports:
+        eq = eq_report.get("equipment", {})
+        eq_name = eq.get("name", "Unknown")
+        eq_type = eq.get("equipment_type", "")
+        eq_loc = eq.get("location", "N/A")
+
+        elements.append(Paragraph(
+            f"<b>{eq_name}</b> — {eq_type} • {eq_loc}",
+            styles["BodyText2"],
+        ))
+
+        if eq_report.get("has_data"):
+            detail_header = ["Metric", "Pre", "Post", "Change"]
+            detail_data = [detail_header]
+            for comp in eq_report.get("comparisons", []):
+                if not comp.get("pre") and not comp.get("post"):
+                    continue
+                pre_str = f"{comp['pre']['value']}" if comp.get("pre") else "—"
+                post_str = f"{comp['post']['value']}" if comp.get("post") else "—"
+                diff = comp.get("difference")
+                if diff is not None:
+                    sign = "+" if diff > 0 else ""
+                    change_str = f"{sign}{diff} {comp.get('unit', '')}"
+                else:
+                    change_str = "—"
+                detail_data.append([
+                    f"{comp['reading_type']} ({comp.get('unit', '')})",
+                    pre_str, post_str, change_str,
+                ])
+
+            if len(detail_data) > 1:
+                dt = Table(detail_data, colWidths=[2.8 * inch, 1.3 * inch, 1.3 * inch, 1.8 * inch])
+                dt.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), navy_light),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), lime),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 8),
+                    ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                    ("FONTSIZE", (0, 1), (-1, -1), 8),
+                    ("TEXTCOLOR", (0, 1), (-1, -1), white),
+                    ("BACKGROUND", (0, 1), (-1, -1), dark_bg),
+                    ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, navy_light),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ]))
+                elements.append(dt)
+        else:
+            elements.append(Paragraph("No readings recorded for this unit.", styles["ReportMeta"]))
+
+        elements.append(Spacer(1, 10))
+
+    # ---- Footer ----
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("BLUE BOX AIR, INC. — Coil Management Solutions", styles["FooterText"]))
+    elements.append(Paragraph(f"Report auto-generated on {generated_at}", styles["FooterText"]))
+
+    # Build
+    doc.build(elements)
+    return buffer.getvalue()
+
+
+async def _upload_pdf_to_salesforce(
+    pdf_bytes: bytes,
+    filename: str,
+    title: str,
+    opportunity_id: str,
+) -> dict:
+    """Upload a PDF to Salesforce as a ContentVersion and link it to the Opportunity."""
+    # Find the most recent SF session
+    session = await db.sf_sessions.find_one({}, sort=[("updated_at", -1)])
+    if not session:
+        return {"success": False, "error": "No Salesforce session found. Please login via Salesforce first."}
+
+    access_token = session.get("access_token", "")
+    instance_url = session.get("instance_url", "")
+    if not access_token or not instance_url:
+        return {"success": False, "error": "Invalid Salesforce session."}
+
+    api_version = os.environ.get("SALESFORCE_API_VERSION", "v59.0")
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client_http:
+            # Step 1: Create ContentVersion
+            cv_payload = {
+                "Title": title,
+                "PathOnClient": filename,
+                "VersionData": pdf_b64,
+            }
+            cv_resp = await client_http.post(
+                f"{instance_url}/services/data/{api_version}/sobjects/ContentVersion/",
+                json=cv_payload,
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            )
+
+            if cv_resp.status_code not in (200, 201):
+                logging.error(f"SF ContentVersion create failed: {cv_resp.status_code} {cv_resp.text}")
+                return {"success": False, "error": f"Salesforce file upload failed: {cv_resp.text[:200]}"}
+
+            cv_data = cv_resp.json()
+            content_version_id = cv_data.get("id", "")
+
+            # Step 2: Get the ContentDocumentId from the ContentVersion
+            cv_query_resp = await client_http.get(
+                f"{instance_url}/services/data/{api_version}/sobjects/ContentVersion/{content_version_id}",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if cv_query_resp.status_code != 200:
+                logging.error(f"SF ContentVersion query failed: {cv_query_resp.status_code}")
+                return {
+                    "success": True,
+                    "content_version_id": content_version_id,
+                    "warning": "File uploaded but could not link to Opportunity",
+                }
+
+            content_document_id = cv_query_resp.json().get("ContentDocumentId", "")
+
+            # Step 3: Link ContentDocument to the Opportunity
+            if content_document_id and opportunity_id:
+                link_payload = {
+                    "ContentDocumentId": content_document_id,
+                    "LinkedEntityId": opportunity_id,
+                    "ShareType": "V",
+                    "Visibility": "AllUsers",
+                }
+                link_resp = await client_http.post(
+                    f"{instance_url}/services/data/{api_version}/sobjects/ContentDocumentLink/",
+                    json=link_payload,
+                    headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+                )
+                if link_resp.status_code not in (200, 201):
+                    logging.warning(f"SF ContentDocumentLink create warning: {link_resp.status_code} {link_resp.text}")
+                    return {
+                        "success": True,
+                        "content_version_id": content_version_id,
+                        "content_document_id": content_document_id,
+                        "warning": f"File uploaded but linking failed: {link_resp.text[:200]}",
+                    }
+
+            logging.info(f"PDF uploaded to Salesforce: ContentVersion={content_version_id}, ContentDocument={content_document_id}")
+            return {
+                "success": True,
+                "content_version_id": content_version_id,
+                "content_document_id": content_document_id,
+                "linked_to_opportunity": opportunity_id,
+            }
+
+    except Exception as e:
+        logging.error(f"Salesforce PDF upload error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@api_router.post("/projects/{project_id}/generate-report")
+async def generate_and_upload_report(project_id: str, data: dict = Body(...)):
+    """
+    Generate a PDF report with:
+    - Average differential pressure drop per unit
+    - Average airflow increase per unit
+    - Overall average decrease in differential pressure
+    - Overall average increase in airflow
+    Then upload the PDF to Salesforce Opportunity files and return it for sharing.
+    """
+    technician_name = data.get("technician_name", "Unknown Technician")
+    technician_email = data.get("technician_email", "")
+
+    # ---- Fetch project (same logic as existing generate_report) ----
+    project = None
+    try:
+        project = await db.sf_projects.find_one({"_id": ObjectId(project_id)})
+    except Exception:
+        project = await db.sf_projects.find_one({"salesforce_id": project_id})
+
+    if not project:
+        try:
+            custom = await db.custom_projects.find_one({"_id": ObjectId(project_id)})
+        except Exception:
+            custom = await db.custom_projects.find_one({"id": project_id})
+        if custom:
+            project = custom
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project = serialize_doc(project)
+    if "_id" in project:
+        project["id"] = str(project.pop("_id"))
+
+    # ---- Fetch equipment ----
+    equipment_list = []
+    account_name = project.get("client_name", "")
+    if account_name:
+        async for e in db.sf_equipment.find({"account_name": account_name}):
+            eq_doc = serialize_doc(e)
+            eq_doc["id"] = str(eq_doc.get("_id", eq_doc.get("salesforce_id", "")))
+            equipment_list.append(eq_doc)
+
+    custom_equipment = await db.equipment.find({"project_id": project_id}).to_list(100)
+    for ce in custom_equipment:
+        original_id = ce.get("id", "")  # Preserve the custom UUID id
+        mongo_id = str(ce["_id"])
+        del ce["_id"]
+        ce["id"] = original_id or mongo_id  # Prefer custom id, fallback to mongo _id
+        ce["_mongo_id"] = mongo_id  # Keep mongo id for fallback matching
+        equipment_list.append(ce)
+
+    # ---- Fetch all readings ----
+    all_readings = await db.readings.find({"project_id": project_id}).to_list(500)
+    all_readings = serialize_doc(all_readings)
+
+    # ---- Calculate per-unit and overall averages ----
+    reading_types = ["Differential Pressure", "Airflow", "Temperature", "Humidity"]
+    unit_map = {"Differential Pressure": "inWC", "Airflow": "FPM", "Temperature": "°F", "Humidity": "%"}
+
+    equipment_reports = []
+    unit_averages = []
+
+    # Accumulators for overall averages
+    all_pressure_drops = []
+    all_airflow_increases = []
+
+    for eq in equipment_list:
+        # Match readings by equipment id (try both custom id and mongo _id)
+        eq_ids = {eq.get("id", ""), eq.get("_mongo_id", ""), eq.get("salesforce_id", "")}
+        eq_ids.discard("")
+        eq_readings = [r for r in all_readings if r.get("equipment_id") in eq_ids]
+
+        comparisons = []
+        eq_pressure_drops = []
+        eq_airflow_increases = []
+
+        for rt in reading_types:
+            type_readings = [r for r in eq_readings if r.get("reading_type") == rt]
+            pre_readings = sorted(
+                [r for r in type_readings if r.get("reading_phase") == "Pre"],
+                key=lambda r: r.get("captured_at", r.get("timestamp", "")),
+            )
+            post_readings = sorted(
+                [r for r in type_readings if r.get("reading_phase") == "Post"],
+                key=lambda r: r.get("captured_at", r.get("timestamp", "")),
+            )
+
+            # Get the latest pre and post
+            latest_pre = pre_readings[-1] if pre_readings else None
+            latest_post = post_readings[-1] if post_readings else None
+
+            difference = None
+            percent_change = None
+            if latest_pre and latest_post:
+                difference = round(latest_post["value"] - latest_pre["value"], 2)
+                if latest_pre["value"] != 0:
+                    percent_change = round((difference / latest_pre["value"]) * 100, 1)
+
+                # Collect for averages
+                if rt == "Differential Pressure":
+                    # Pressure DROP = Pre - Post (positive means drop)
+                    drop = round(latest_pre["value"] - latest_post["value"], 2)
+                    eq_pressure_drops.append(drop)
+                    all_pressure_drops.append(drop)
+                elif rt == "Airflow":
+                    # Airflow INCREASE = Post - Pre (positive means increase)
+                    increase = round(latest_post["value"] - latest_pre["value"], 2)
+                    eq_airflow_increases.append(increase)
+                    all_airflow_increases.append(increase)
+
+            comparisons.append({
+                "reading_type": rt,
+                "unit": unit_map.get(rt, ""),
+                "pre": {"value": latest_pre["value"], "captured_at": latest_pre.get("captured_at")} if latest_pre else None,
+                "post": {"value": latest_post["value"], "captured_at": latest_post.get("captured_at")} if latest_post else None,
+                "difference": difference,
+                "percent_change": percent_change,
+            })
+
+        # Per-unit averages
+        avg_dp = round(sum(eq_pressure_drops) / len(eq_pressure_drops), 2) if eq_pressure_drops else None
+        avg_af = round(sum(eq_airflow_increases) / len(eq_airflow_increases), 2) if eq_airflow_increases else None
+
+        unit_averages.append({
+            "equipment_name": eq.get("name", "Unknown"),
+            "equipment_id": eq["id"],
+            "avg_pressure_drop": avg_dp,
+            "avg_airflow_increase": avg_af,
+        })
+
+        equipment_reports.append({
+            "equipment": eq,
+            "comparisons": comparisons,
+            "has_data": any(c["pre"] or c["post"] for c in comparisons),
+        })
+
+    # Overall averages across all units
+    overall_averages = {
+        "avg_pressure_drop": round(sum(all_pressure_drops) / len(all_pressure_drops), 2) if all_pressure_drops else None,
+        "avg_airflow_increase": round(sum(all_airflow_increases) / len(all_airflow_increases), 2) if all_airflow_increases else None,
+    }
+
+    # ---- Generate PDF ----
+    now_str = datetime.utcnow().strftime("%B %d, %Y %I:%M %p")
+    project_name = project.get("name", "Service Report")
+
+    pdf_bytes = _build_report_pdf(
+        project=project,
+        equipment_reports=equipment_reports,
+        unit_averages=unit_averages,
+        overall_averages=overall_averages,
+        technician_name=technician_name,
+        technician_email=technician_email,
+        generated_at=now_str,
+    )
+
+    # ---- Upload to Salesforce ----
+    sf_result = {"success": False, "error": "Not attempted"}
+    salesforce_id = project.get("salesforce_id", project.get("id", ""))
+    if salesforce_id:
+        safe_name = project_name.replace(" ", "_").replace("/", "-")[:50]
+        filename = f"BBA_Report_{safe_name}_{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+        title = f"Service Report - {project_name}"
+        sf_result = await _upload_pdf_to_salesforce(pdf_bytes, filename, title, salesforce_id)
+
+    # ---- Return PDF as base64 + metadata ----
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    return {
+        "success": True,
+        "pdf_base64": pdf_b64,
+        "filename": f"BBA_Report_{project_name.replace(' ', '_')[:30]}_{datetime.utcnow().strftime('%Y%m%d')}.pdf",
+        "salesforce_upload": sf_result,
+        "report_data": {
+            "unit_averages": unit_averages,
+            "overall_averages": overall_averages,
+            "equipment_count": len(equipment_list),
+            "readings_count": len(all_readings),
+        },
+        "generated_at": now_str,
+    }
 
 
 # Include the router in the main app

@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { format } from 'date-fns';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -81,6 +82,10 @@ export default function ProjectDetailScreen() {
   const [selectedTechs, setSelectedTechs] = useState<string[]>([]);
   const [shareMessage, setShareMessage] = useState('');
   const [sharing, setSharing] = useState(false);
+
+  // Report upload state
+  const [reportUploading, setReportUploading] = useState(false);
+  const [reportUploadResult, setReportUploadResult] = useState<any>(null);
 
   // Assigned technicians state
   const [assignedTechs, setAssignedTechs] = useState<any[]>([]);
@@ -473,6 +478,100 @@ export default function ProjectDetailScreen() {
       Alert.alert('Error', 'Failed to generate PDF report');
     } finally {
       setPdfGenerating(false);
+    }
+  };
+
+  const generateAndShareReport = async () => {
+    setReportUploading(true);
+    setReportUploadResult(null);
+    try {
+      // Get technician info from AsyncStorage
+      let techName = 'Unknown Technician';
+      let techEmail = '';
+      try {
+        const techStr = await AsyncStorage.getItem('technician');
+        if (techStr) {
+          const tech = JSON.parse(techStr);
+          techName = tech.full_name || tech.name || 'Unknown Technician';
+          techEmail = tech.email || '';
+        }
+      } catch {}
+
+      // Call the backend to generate PDF + upload to Salesforce
+      const response = await fetch(`${API_URL}/api/projects/${id}/generate-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          technician_name: techName,
+          technician_email: techEmail,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to generate report');
+      }
+
+      const result = await response.json();
+      setReportUploadResult(result);
+
+      // Show Salesforce upload status
+      const sfUpload = result.salesforce_upload || {};
+      if (sfUpload.success) {
+        // Don't alert here yet, we'll show it inline
+      }
+
+      // Save PDF and share
+      if (result.pdf_base64) {
+        if (Platform.OS === 'web') {
+          // On web: create a blob and download
+          const byteCharacters = atob(result.pdf_base64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = result.filename || 'BBA_Report.pdf';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          Alert.alert(
+            'Report Generated',
+            `PDF downloaded.${sfUpload.success ? ' File also uploaded to Salesforce.' : ''}`,
+          );
+        } else {
+          // On mobile: save to file system and share
+          const fileUri = `${FileSystem.cacheDirectory}${result.filename || 'BBA_Report.pdf'}`;
+          await FileSystem.writeAsStringAsync(fileUri, result.pdf_base64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+
+          const canShare = await Sharing.isAvailableAsync();
+          if (canShare) {
+            await Sharing.shareAsync(fileUri, {
+              mimeType: 'application/pdf',
+              dialogTitle: 'Share Service Report via Gmail',
+              UTI: 'com.adobe.pdf',
+            });
+          } else {
+            Alert.alert(
+              'Report Generated',
+              `Report saved to device.${sfUpload.success ? '\nFile uploaded to Salesforce.' : ''}`,
+            );
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Report generation error:', error);
+      Alert.alert('Error', error.message || 'Failed to generate report');
+    } finally {
+      setReportUploading(false);
     }
   };
 
@@ -1235,25 +1334,167 @@ export default function ProjectDetailScreen() {
 
                 {/* Action Buttons */}
                 <View style={styles.reportActionButtons}>
+                  {/* Primary: Generate, Upload to SF & Share */}
                   <TouchableOpacity 
-                    style={styles.downloadPdfButton} 
-                    onPress={generatePDF}
-                    disabled={pdfGenerating}
+                    style={[styles.downloadPdfButton, { backgroundColor: COLORS.lime }]} 
+                    onPress={generateAndShareReport}
+                    disabled={reportUploading}
                   >
-                    {pdfGenerating ? (
-                      <ActivityIndicator size="small" color={COLORS.white} />
+                    {reportUploading ? (
+                      <ActivityIndicator size="small" color={COLORS.navy} />
                     ) : (
-                      <Ionicons name="download" size={20} color={COLORS.white} />
+                      <Ionicons name="cloud-upload" size={20} color={COLORS.navy} />
                     )}
-                    <Text style={styles.downloadPdfButtonText}>
-                      {pdfGenerating ? 'Generating...' : 'Download PDF'}
+                    <Text style={[styles.downloadPdfButtonText, { color: COLORS.navy }]}>
+                      {reportUploading ? 'Generating & Uploading...' : 'Generate & Share Report'}
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={styles.regenerateButton} onPress={fetchReport}>
-                    <Ionicons name="refresh" size={20} color={COLORS.navy} />
-                    <Text style={styles.regenerateButtonText}>Refresh</Text>
-                  </TouchableOpacity>
+                  {/* Salesforce upload result */}
+                  {reportUploadResult && (
+                    <View style={{
+                      backgroundColor: reportUploadResult.salesforce_upload?.success 
+                        ? COLORS.green + '15' : COLORS.orange + '15',
+                      borderRadius: 10,
+                      padding: 12,
+                      marginTop: 10,
+                      borderLeftWidth: 3,
+                      borderLeftColor: reportUploadResult.salesforce_upload?.success 
+                        ? COLORS.green : COLORS.orange,
+                    }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                        <Ionicons 
+                          name={reportUploadResult.salesforce_upload?.success ? 'cloud-done' : 'cloud-offline'} 
+                          size={16} 
+                          color={reportUploadResult.salesforce_upload?.success ? COLORS.green : COLORS.orange} 
+                        />
+                        <Text style={{ 
+                          color: reportUploadResult.salesforce_upload?.success ? COLORS.green : COLORS.orange,
+                          fontWeight: '700', fontSize: 12, marginLeft: 6,
+                        }}>
+                          {reportUploadResult.salesforce_upload?.success 
+                            ? 'Uploaded to Salesforce' 
+                            : 'Salesforce Upload Pending'}
+                        </Text>
+                      </View>
+                      <Text style={{ color: COLORS.gray, fontSize: 11 }}>
+                        {reportUploadResult.salesforce_upload?.success 
+                          ? 'Report file attached to this Opportunity in Salesforce.'
+                          : (reportUploadResult.salesforce_upload?.error || 'Login via Salesforce to enable upload.')}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Report Averages Summary */}
+                  {reportUploadResult?.report_data && (
+                    <View style={{
+                      backgroundColor: COLORS.navyLight,
+                      borderRadius: 12,
+                      padding: 16,
+                      marginTop: 14,
+                      borderWidth: 1,
+                      borderColor: COLORS.lime + '30',
+                    }}>
+                      <Text style={{ color: COLORS.lime, fontWeight: '800', fontSize: 13, marginBottom: 10, letterSpacing: 0.5 }}>
+                        REPORT AVERAGES
+                      </Text>
+                      
+                      {/* Per-unit averages */}
+                      {reportUploadResult.report_data.unit_averages?.length > 0 && (
+                        <>
+                          <Text style={{ color: COLORS.gray, fontSize: 10, fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
+                            Per Unit
+                          </Text>
+                          {reportUploadResult.report_data.unit_averages.map((ua: any, idx: number) => (
+                            <View key={idx} style={{
+                              backgroundColor: COLORS.navy,
+                              borderRadius: 8,
+                              padding: 10,
+                              marginBottom: 6,
+                            }}>
+                              <Text style={{ color: COLORS.white, fontWeight: '600', fontSize: 12, marginBottom: 4 }}>
+                                {ua.equipment_name}
+                              </Text>
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ color: COLORS.gray, fontSize: 9, textTransform: 'uppercase' }}>Avg DP Drop</Text>
+                                  <Text style={{ color: ua.avg_pressure_drop != null ? COLORS.green : COLORS.grayDark, fontWeight: '700', fontSize: 14 }}>
+                                    {ua.avg_pressure_drop != null ? `${ua.avg_pressure_drop} inWC` : '—'}
+                                  </Text>
+                                </View>
+                                <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                                  <Text style={{ color: COLORS.gray, fontSize: 9, textTransform: 'uppercase' }}>Avg Airflow Increase</Text>
+                                  <Text style={{ color: ua.avg_airflow_increase != null ? COLORS.lime : COLORS.grayDark, fontWeight: '700', fontSize: 14 }}>
+                                    {ua.avg_airflow_increase != null ? `${ua.avg_airflow_increase} FPM` : '—'}
+                                  </Text>
+                                </View>
+                              </View>
+                            </View>
+                          ))}
+                        </>
+                      )}
+
+                      {/* Overall averages */}
+                      <Text style={{ color: COLORS.gray, fontSize: 10, fontWeight: '600', marginTop: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
+                        Overall Project Averages
+                      </Text>
+                      <View style={{
+                        backgroundColor: COLORS.navy,
+                        borderRadius: 8,
+                        padding: 12,
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        borderWidth: 1,
+                        borderColor: COLORS.lime + '25',
+                      }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: COLORS.gray, fontSize: 9, textTransform: 'uppercase' }}>Avg Decrease DP</Text>
+                          <Text style={{ 
+                            color: reportUploadResult.report_data.overall_averages?.avg_pressure_drop != null ? COLORS.green : COLORS.grayDark, 
+                            fontWeight: '800', fontSize: 18 
+                          }}>
+                            {reportUploadResult.report_data.overall_averages?.avg_pressure_drop != null 
+                              ? `${reportUploadResult.report_data.overall_averages.avg_pressure_drop} inWC` 
+                              : 'No data'}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                          <Text style={{ color: COLORS.gray, fontSize: 9, textTransform: 'uppercase' }}>Avg Increase Airflow</Text>
+                          <Text style={{ 
+                            color: reportUploadResult.report_data.overall_averages?.avg_airflow_increase != null ? COLORS.lime : COLORS.grayDark, 
+                            fontWeight: '800', fontSize: 18 
+                          }}>
+                            {reportUploadResult.report_data.overall_averages?.avg_airflow_increase != null 
+                              ? `${reportUploadResult.report_data.overall_averages.avg_airflow_increase} FPM` 
+                              : 'No data'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                    {/* Secondary: Download local PDF */}
+                    <TouchableOpacity 
+                      style={[styles.regenerateButton, { flex: 1 }]} 
+                      onPress={generatePDF}
+                      disabled={pdfGenerating}
+                    >
+                      {pdfGenerating ? (
+                        <ActivityIndicator size="small" color={COLORS.navy} />
+                      ) : (
+                        <Ionicons name="download" size={18} color={COLORS.navy} />
+                      )}
+                      <Text style={styles.regenerateButtonText}>
+                        {pdfGenerating ? 'Generating...' : 'Local PDF'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={[styles.regenerateButton, { flex: 1 }]} onPress={fetchReport}>
+                      <Ionicons name="refresh" size={18} color={COLORS.navy} />
+                      <Text style={styles.regenerateButtonText}>Refresh</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             ) : (

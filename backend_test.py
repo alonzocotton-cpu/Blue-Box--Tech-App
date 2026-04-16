@@ -1,218 +1,311 @@
 #!/usr/bin/env python3
 """
-Blue Box Air Backend API Testing
-Tests the specific endpoints requested in the review
+BBA Tech Backend API Testing
+Tests the new report generation endpoint and regression tests
 """
 
 import requests
 import json
+import base64
 import sys
 from urllib.parse import quote
+from datetime import datetime
 
-# Backend URL - using localhost since external proxy has routing issues with new endpoints
-BACKEND_URL = "http://localhost:8001/api"
+# Backend URL - using external URL as specified in review request
+BACKEND_URL = "https://techservice-app-2.preview.emergentagent.com/api"
 
-def test_endpoint(method, endpoint, data=None, params=None, expected_status=200):
-    """Test a single endpoint and return the response"""
-    url = f"{BACKEND_URL}{endpoint}"
+def test_report_generation():
+    """Test the main report generation endpoint with expected calculations"""
+    print("🧪 Testing POST /api/projects/{project_id}/generate-report...")
+    
+    project_id = "69d42c46ed575b4fa15b3265"
+    url = f"{BACKEND_URL}/projects/{project_id}/generate-report"
+    
+    payload = {
+        "technician_name": "Jim Metropoulos",
+        "technician_email": "jim@blueboxair.com"
+    }
     
     try:
-        if method.upper() == "GET":
-            response = requests.get(url, params=params, timeout=30)
-        elif method.upper() == "POST":
-            response = requests.post(url, json=data, timeout=30)
-        elif method.upper() == "PUT":
-            response = requests.put(url, json=data, timeout=30)
-        elif method.upper() == "DELETE":
-            response = requests.delete(url, params=params, timeout=30)
+        response = requests.post(url, json=payload, timeout=30)
+        print(f"   Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Check required fields
+            required_fields = ["success", "pdf_base64", "filename", "report_data"]
+            missing_fields = [field for field in required_fields if field not in data]
+            if missing_fields:
+                print(f"   ❌ Missing required fields: {missing_fields}")
+                return False
+                
+            # Check success
+            if not data.get("success"):
+                print(f"   ❌ Success is False")
+                return False
+                
+            # Check PDF base64 is non-empty
+            pdf_base64 = data.get("pdf_base64", "")
+            if not pdf_base64:
+                print(f"   ❌ PDF base64 is empty")
+                return False
+                
+            # Check filename contains "BBA_Report"
+            filename = data.get("filename", "")
+            if "BBA_Report" not in filename:
+                print(f"   ❌ Filename doesn't contain 'BBA_Report': {filename}")
+                return False
+                
+            # Check report_data structure
+            report_data = data.get("report_data", {})
+            if "unit_averages" not in report_data or "overall_averages" not in report_data:
+                print(f"   ❌ Missing unit_averages or overall_averages in report_data")
+                return False
+                
+            unit_averages = report_data["unit_averages"]
+            overall_averages = report_data["overall_averages"]
+            
+            # Check we have 2 equipment entries
+            if len(unit_averages) != 2:
+                print(f"   ❌ Expected 2 unit averages, got {len(unit_averages)}")
+                print(f"   📊 Unit averages: {json.dumps(unit_averages, indent=2)}")
+                return False
+                
+            # Verify calculations (allowing for small floating point differences)
+            def check_value(actual, expected, name):
+                if actual is None:
+                    print(f"   ❌ {name} is None, expected {expected}")
+                    return False
+                if abs(actual - expected) > 0.1:
+                    print(f"   ❌ {name}: expected {expected}, got {actual}")
+                    return False
+                return True
+                
+            # Check Equipment 1 (AHU-01 Roof Unit): DP Drop = 1.3 inWC, Airflow Increase = 230.0 FPM
+            eq1 = unit_averages[0]
+            if not check_value(eq1.get("avg_pressure_drop"), 1.3, "Equipment 1 avg_pressure_drop"):
+                return False
+            if not check_value(eq1.get("avg_airflow_increase"), 230.0, "Equipment 1 avg_airflow_increase"):
+                return False
+                
+            # Check Equipment 2 (RTU-02 West Wing): DP Drop = 1.5 inWC, Airflow Increase = 250.0 FPM  
+            eq2 = unit_averages[1]
+            if not check_value(eq2.get("avg_pressure_drop"), 1.5, "Equipment 2 avg_pressure_drop"):
+                return False
+            if not check_value(eq2.get("avg_airflow_increase"), 250.0, "Equipment 2 avg_airflow_increase"):
+                return False
+                
+            # Check Overall: Avg DP Drop = 1.4 inWC, Avg Airflow Increase = 240.0 FPM
+            if not check_value(overall_averages.get("avg_pressure_drop"), 1.4, "Overall avg_pressure_drop"):
+                return False
+            if not check_value(overall_averages.get("avg_airflow_increase"), 240.0, "Overall avg_airflow_increase"):
+                return False
+                
+            print(f"   ✅ Report generation successful with correct calculations")
+            print(f"   📊 Equipment 1: DP Drop={eq1.get('avg_pressure_drop')}, Airflow Increase={eq1.get('avg_airflow_increase')}")
+            print(f"   📊 Equipment 2: DP Drop={eq2.get('avg_pressure_drop')}, Airflow Increase={eq2.get('avg_airflow_increase')}")
+            print(f"   📊 Overall: DP Drop={overall_averages.get('avg_pressure_drop')}, Airflow Increase={overall_averages.get('avg_airflow_increase')}")
+            
+            return True
+            
         else:
-            raise ValueError(f"Unsupported method: {method}")
-        
-        print(f"\n{'='*60}")
-        print(f"TEST: {method} {endpoint}")
-        print(f"URL: {url}")
-        if data:
-            print(f"Data: {json.dumps(data, indent=2)}")
-        if params:
-            print(f"Params: {params}")
-        print(f"Status: {response.status_code}")
-        
-        try:
-            response_data = response.json()
-            print(f"Response: {json.dumps(response_data, indent=2)}")
-        except:
-            print(f"Response (text): {response.text}")
-            response_data = {"error": "Invalid JSON response"}
-        
-        # Check if status matches expected
-        status_match = response.status_code == expected_status
-        print(f"Expected Status: {expected_status} | Actual: {response.status_code} | Match: {status_match}")
-        
-        return {
-            "success": status_match,
-            "status_code": response.status_code,
-            "data": response_data,
-            "endpoint": endpoint,
-            "method": method
-        }
-        
+            print(f"   ❌ Expected 200, got {response.status_code}")
+            print(f"   Response: {response.text}")
+            return False
+            
     except Exception as e:
-        print(f"\n{'='*60}")
-        print(f"ERROR testing {method} {endpoint}: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "endpoint": endpoint,
-            "method": method
-        }
+        print(f"   ❌ Exception: {e}")
+        return False
+
+def test_report_generation_404():
+    """Test 404 for missing project"""
+    print("🧪 Testing POST /api/projects/nonexistent/generate-report...")
+    
+    url = f"{BACKEND_URL}/projects/nonexistent/generate-report"
+    payload = {
+        "technician_name": "Test",
+        "technician_email": "test@test.com"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        print(f"   Status: {response.status_code}")
+        
+        if response.status_code == 404:
+            print(f"   ✅ Correctly returns 404 for nonexistent project")
+            return True
+        else:
+            print(f"   ❌ Expected 404, got {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"   ❌ Exception: {e}")
+        return False
+
+def test_auth_login_regression():
+    """Regression test for auth login"""
+    print("🧪 Testing POST /api/auth/login (regression)...")
+    
+    url = f"{BACKEND_URL}/auth/login"
+    payload = {
+        "username": "demo@blueboxair.com",
+        "password": "BBAReview2025!"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        print(f"   Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("success"):
+                print(f"   ✅ Login successful")
+                return True
+            else:
+                print(f"   ❌ Login failed: {data}")
+                return False
+        else:
+            print(f"   ❌ Expected 200, got {response.status_code}")
+            print(f"   Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"   ❌ Exception: {e}")
+        return False
+
+def test_projects_list_regression():
+    """Regression test for projects list"""
+    print("🧪 Testing GET /api/projects (regression)...")
+    
+    url = f"{BACKEND_URL}/projects"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        print(f"   Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, dict) and "projects" in data:
+                projects = data["projects"]
+                if isinstance(projects, list):
+                    print(f"   ✅ Projects list returned {len(projects)} projects")
+                    return True
+                else:
+                    print(f"   ❌ Expected projects array, got: {type(projects)}")
+                    return False
+            elif isinstance(data, list):
+                print(f"   ✅ Projects list returned {len(data)} projects")
+                return True
+            else:
+                print(f"   ❌ Expected array or dict with projects key, got: {type(data)}")
+                return False
+        else:
+            print(f"   ❌ Expected 200, got {response.status_code}")
+            print(f"   Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"   ❌ Exception: {e}")
+        return False
+
+def test_pdf_content_validation():
+    """Validate PDF content from report generation"""
+    print("🧪 Testing PDF Content Validation...")
+    
+    project_id = "69d42c46ed575b4fa15b3265"
+    url = f"{BACKEND_URL}/projects/{project_id}/generate-report"
+    
+    payload = {
+        "technician_name": "Jim Metropoulos",
+        "technician_email": "jim@blueboxair.com"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            pdf_base64 = data.get("pdf_base64", "")
+            
+            if not pdf_base64:
+                print(f"   ❌ No PDF base64 data")
+                return False
+                
+            # Decode base64
+            try:
+                pdf_bytes = base64.b64decode(pdf_base64)
+            except Exception as e:
+                print(f"   ❌ Failed to decode base64: {e}")
+                return False
+                
+            # Check if it's a valid PDF (starts with %PDF)
+            if not pdf_bytes.startswith(b'%PDF'):
+                print(f"   ❌ PDF doesn't start with %PDF header")
+                return False
+                
+            # Check non-zero size
+            if len(pdf_bytes) == 0:
+                print(f"   ❌ PDF has zero size")
+                return False
+                
+            print(f"   ✅ PDF validation successful - {len(pdf_bytes)} bytes, valid PDF header")
+            return True
+            
+        else:
+            print(f"   ❌ Failed to get PDF for validation: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"   ❌ Exception: {e}")
+        return False
 
 def main():
-    """Run all Blue Box Air backend API tests for the Coil of the Month review request"""
-    print("🔧 Blue Box Air Backend API Testing - Coil of the Month Review Request")
-    print(f"Backend URL: {BACKEND_URL}")
+    """Run all tests"""
+    print("🚀 Starting BBA Tech Backend API Tests")
+    print("=" * 60)
     
-    test_results = []
-    created_entry_id = None
+    tests = [
+        ("Report Generation", test_report_generation),
+        ("Report Generation 404", test_report_generation_404),
+        ("Auth Login Regression", test_auth_login_regression),
+        ("Projects List Regression", test_projects_list_regression),
+        ("PDF Content Validation", test_pdf_content_validation),
+    ]
     
-    # Test 1: GET /api/coil-of-month - List all entries
-    print("\n" + "="*80)
-    print("TEST 1: GET /api/coil-of-month - List all entries")
-    result = test_endpoint("GET", "/coil-of-month")
-    test_results.append(result)
+    results = []
     
-    # Test 2: GET /api/coil-of-month/current - Get current featured entry
-    print("\n" + "="*80)
-    print("TEST 2: GET /api/coil-of-month/current - Get current featured entry")
-    result = test_endpoint("GET", "/coil-of-month/current")
-    test_results.append(result)
-    
-    # Test 3: POST /api/coil-of-month - Create entry (admin-only)
-    print("\n" + "="*80)
-    print("TEST 3: POST /api/coil-of-month - Create entry (admin-only)")
-    admin_entry_data = {
-        "email": "alonzo.cotton@blueboxair.com",
-        "title": "Test Coil",
-        "description": "A short test description.",
-        "media": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==",
-        "media_type": "photo",
-        "unit_name": "RTU-002",
-        "created_by_name": "Alonzo Cotton"
-    }
-    result = test_endpoint("POST", "/coil-of-month", data=admin_entry_data)
-    test_results.append(result)
-    
-    # Extract entry ID for subsequent tests
-    if result.get("success") and result.get("data", {}).get("success"):
-        entry_data = result.get("data", {}).get("entry", {})
-        created_entry_id = entry_data.get("_id")
-        print(f"Created entry ID: {created_entry_id}")
-    
-    # Test 4: POST /api/coil-of-month - Non-admin should get 403
-    print("\n" + "="*80)
-    print("TEST 4: POST /api/coil-of-month - Non-admin should get 403")
-    non_admin_entry_data = {
-        "email": "john@test.com",
-        "title": "Test Coil",
-        "description": "A short test description.",
-        "media": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==",
-        "media_type": "photo",
-        "unit_name": "RTU-002",
-        "created_by_name": "John Doe"
-    }
-    result = test_endpoint("POST", "/coil-of-month", data=non_admin_entry_data, expected_status=403)
-    test_results.append(result)
-    
-    # Test 5: POST /api/coil-of-month/{id}/love - Toggle love (first time)
-    if created_entry_id:
-        print("\n" + "="*80)
-        print("TEST 5: POST /api/coil-of-month/{id}/love - Toggle love (first time)")
-        love_data = {"email": "user@test.com"}
-        result = test_endpoint("POST", f"/coil-of-month/{created_entry_id}/love", data=love_data)
-        test_results.append(result)
+    for test_name, test_func in tests:
+        print(f"\n📋 {test_name}")
+        print("-" * 40)
+        success = test_func()
+        results.append((test_name, success))
         
-        # Test 6: POST /api/coil-of-month/{id}/love - Toggle love (second time - should unlove)
-        print("\n" + "="*80)
-        print("TEST 6: POST /api/coil-of-month/{id}/love - Toggle love (second time - should unlove)")
-        result = test_endpoint("POST", f"/coil-of-month/{created_entry_id}/love", data=love_data)
-        test_results.append(result)
-    else:
-        print("\n❌ Skipping love tests - no entry ID available")
-        test_results.append({"success": False, "error": "No entry ID for love test", "endpoint": "/coil-of-month/{id}/love", "method": "POST"})
-        test_results.append({"success": False, "error": "No entry ID for love test", "endpoint": "/coil-of-month/{id}/love", "method": "POST"})
-    
-    # Test 7: POST /api/coil-of-month/{id}/comments - Add comment
-    if created_entry_id:
-        print("\n" + "="*80)
-        print("TEST 7: POST /api/coil-of-month/{id}/comments - Add comment")
-        comment_data = {
-            "email": "user@test.com",
-            "name": "Test User",
-            "text": "Looks great!"
-        }
-        result = test_endpoint("POST", f"/coil-of-month/{created_entry_id}/comments", data=comment_data)
-        test_results.append(result)
-        
-        # Test 8: POST /api/coil-of-month/{id}/comments - Comment too long (>25 words)
-        print("\n" + "="*80)
-        print("TEST 8: POST /api/coil-of-month/{id}/comments - Comment too long (>25 words)")
-        long_comment_data = {
-            "email": "user@test.com",
-            "name": "Test User",
-            "text": "This is a very long comment that exceeds the twenty five word limit that is enforced by the backend API validation rules for comments on coil of the month entries"
-        }
-        result = test_endpoint("POST", f"/coil-of-month/{created_entry_id}/comments", data=long_comment_data, expected_status=400)
-        test_results.append(result)
-    else:
-        print("\n❌ Skipping comment tests - no entry ID available")
-        test_results.append({"success": False, "error": "No entry ID for comment test", "endpoint": "/coil-of-month/{id}/comments", "method": "POST"})
-        test_results.append({"success": False, "error": "No entry ID for comment test", "endpoint": "/coil-of-month/{id}/comments", "method": "POST"})
-    
-    # Test 9: POST /api/auth/login - Login regression test
-    print("\n" + "="*80)
-    print("TEST 9: POST /api/auth/login - Login regression test")
-    login_data = {
-        "username": "test",
-        "password": "test"
-    }
-    result = test_endpoint("POST", "/auth/login", data=login_data)
-    test_results.append(result)
-    
-    # Test 10: GET /api/projects - Projects regression test
-    print("\n" + "="*80)
-    print("TEST 10: GET /api/projects - Projects regression test")
-    result = test_endpoint("GET", "/projects")
-    test_results.append(result)
-    
-    # Summary
-    print("\n" + "="*80)
-    print("🔍 TEST SUMMARY")
-    print("="*80)
+    print("\n" + "=" * 60)
+    print("📊 TEST RESULTS SUMMARY")
+    print("=" * 60)
     
     passed = 0
     failed = 0
     
-    for i, result in enumerate(test_results, 1):
-        status = "✅ PASS" if result.get("success", False) else "❌ FAIL"
-        endpoint = result.get("endpoint", "unknown")
-        method = result.get("method", "unknown")
-        print(f"Test {i:2d}: {status} - {method} {endpoint}")
-        
-        if result.get("success", False):
+    for test_name, success in results:
+        status = "✅ PASS" if success else "❌ FAIL"
+        print(f"{status:10} {test_name}")
+        if success:
             passed += 1
         else:
             failed += 1
-            if "error" in result:
-                print(f"         Error: {result['error']}")
-    
-    print(f"\nResults: {passed} passed, {failed} failed")
-    print(f"Success Rate: {(passed/(passed+failed)*100):.1f}%")
+            
+    print("-" * 60)
+    print(f"Total: {len(results)} | Passed: {passed} | Failed: {failed}")
     
     if failed > 0:
-        print("\n❌ Some tests failed. Check the detailed output above.")
-        return 1
+        print(f"\n❌ {failed} test(s) failed")
+        return False
     else:
-        print("\n✅ All tests passed!")
-        return 0
+        print(f"\n✅ All tests passed!")
+        return True
 
 if __name__ == "__main__":
-    sys.exit(main())
+    success = main()
+    sys.exit(0 if success else 1)
