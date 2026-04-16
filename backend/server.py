@@ -553,6 +553,51 @@ async def login(credentials: TechnicianLogin):
             "source": "salesforce_profile",
         }
     
+    # ─── Apple App Review Demo Account ───
+    DEMO_USERNAME = "demo@blueboxair.com"
+    DEMO_PASSWORD = "BBAReview2025!"
+    
+    if login_name.lower() == DEMO_USERNAME and credentials.password == DEMO_PASSWORD:
+        demo_tech = {
+            "id": "apple-review-demo",
+            "salesforce_id": "demo-sf-001",
+            "username": DEMO_USERNAME,
+            "email": DEMO_USERNAME,
+            "full_name": "Demo Reviewer",
+            "first_name": "Demo",
+            "last_name": "Reviewer",
+            "phone": "(555) 100-2025",
+            "title": "Field Technician",
+            "department": "Operations",
+            "company": "Blue Box Air, Inc.",
+            "role": "Technician",
+            "profile_photo": "",
+            "skills": ["Coil Cleaning", "Air Quality", "Differential Pressure", "Bio-Automation"],
+            "source": "demo",
+            "is_admin": True,
+            "profile_completed": True,
+        }
+        
+        # Ensure demo profile exists in DB
+        await db.profiles.update_one(
+            {"email": DEMO_USERNAME},
+            {"$set": {
+                **demo_tech,
+                "technician_id": "apple-review-demo",
+                "profile_completed": True,
+                "updated_at": datetime.utcnow().isoformat(),
+            }},
+            upsert=True,
+        )
+        
+        return {
+            "success": True,
+            "message": "Welcome to BBA Tech, Demo Reviewer!",
+            "technician": demo_tech,
+            "token": "demo-token-" + str(uuid.uuid4()),
+            "source": "demo",
+        }
+    
     # Final fallback: No valid login found
     raise HTTPException(
         status_code=401,
