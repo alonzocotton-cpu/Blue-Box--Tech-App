@@ -1368,8 +1368,9 @@ async def get_lines_of_business():
     return {"lines_of_business": LINES_OF_BUSINESS}
 
 DEFAULT_ROLES = [
-    {"name": "CEO / Owner", "level": 0, "parent": None, "region": None, "color": "#f59e0b", "icon": "star"},
-    {"name": "Head of Operations", "level": 1, "parent": "CEO / Owner", "region": None, "color": "#8b5cf6", "icon": "briefcase"},
+    {"name": "CEO/Founder", "level": 0, "parent": None, "region": None, "color": "#f59e0b", "icon": "star"},
+    {"name": "Head of Finance", "level": 1, "parent": "CEO/Founder", "region": None, "color": "#3b82f6", "icon": "wallet"},
+    {"name": "Head of Operations", "level": 1, "parent": "CEO/Founder", "region": None, "color": "#8b5cf6", "icon": "briefcase"},
     # One Operations Manager per region
     {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "New York", "color": "#3b82f6", "icon": "business"},
     {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "Florida", "color": "#3b82f6", "icon": "business"},
@@ -1382,14 +1383,39 @@ DEFAULT_ROLES = [
     {"name": "Junior Technician", "level": 6, "parent": "Technician", "region": None, "color": "#64748b", "icon": "school"},
 ]
 
+# Default team members to seed
+DEFAULT_TEAM_MEMBERS = [
+    {"member_name": "Jim Metropoulos", "role_name": "CEO/Founder", "region": None, "email": "", "phone": "", "level": 0, "color": "#f59e0b", "icon": "star"},
+    {"member_name": "Noah Ward", "role_name": "Head of Finance", "region": None, "email": "", "phone": "", "level": 1, "color": "#3b82f6", "icon": "wallet"},
+    {"member_name": "Alonzo Cotton", "role_name": "Head of Operations", "region": None, "email": "alonzo.cotton@blueboxair.com", "phone": "", "level": 1, "color": "#8b5cf6", "icon": "briefcase"},
+]
+
 async def seed_roles():
-    """Seed default roles if the collection is empty"""
-    count = await db.roles.count_documents({})
-    if count == 0:
+    """Seed default roles and initial team members if the collections are empty"""
+    # Reset and re-seed roles to get latest structure
+    existing_count = await db.roles.count_documents({})
+    # Check if we need to update (e.g., missing CEO/Founder or Head of Finance)
+    has_ceo_founder = await db.roles.count_documents({"name": "CEO/Founder"})
+    has_head_finance = await db.roles.count_documents({"name": "Head of Finance"})
+    
+    if existing_count == 0 or not has_ceo_founder or not has_head_finance:
+        # Drop old roles and re-seed
+        await db.roles.delete_many({})
         for role in DEFAULT_ROLES:
-            role["created_at"] = datetime.utcnow().isoformat()
-            await db.roles.insert_one(role)
-        logging.info(f"Seeded {len(DEFAULT_ROLES)} default roles")
+            role_doc = {**role, "created_at": datetime.utcnow().isoformat()}
+            await db.roles.insert_one(role_doc)
+        logging.info(f"Seeded {len(DEFAULT_ROLES)} default roles (including CEO/Founder, Head of Finance)")
+    
+    # Seed default team members if they don't already exist
+    for member in DEFAULT_TEAM_MEMBERS:
+        existing = await db.team_assignments.find_one({
+            "member_name": member["member_name"],
+            "role_name": member["role_name"]
+        })
+        if not existing:
+            member_doc = {**member, "assigned_at": datetime.utcnow().isoformat()}
+            await db.team_assignments.insert_one(member_doc)
+            logging.info(f"Seeded team member: {member['member_name']} as {member['role_name']}")
 
 @api_router.get("/roles")
 async def get_roles():
@@ -1414,35 +1440,37 @@ async def get_role_hierarchy():
     # Build tree
     def build_tree():
         tree = []
-        # CEO level
+        # CEO/Founder level (level 0)
         ceo = next((r for r in roles if r["level"] == 0), None)
         if ceo:
             ceo_members = [m for m in members if m.get("role_name") == ceo["name"] and not m.get("region")]
             ceo_node = {**ceo, "members": ceo_members, "children": []}
             
-            # Head of Operations
-            hoo = next((r for r in roles if r["level"] == 1), None)
-            if hoo:
-                hoo_members = [m for m in members if m.get("role_name") == hoo["name"] and not m.get("region")]
-                hoo_node = {**hoo, "members": hoo_members, "children": []}
+            # All level 1 roles (Head of Finance, Head of Operations, etc.)
+            level1_roles = [r for r in roles if r["level"] == 1]
+            for l1_role in level1_roles:
+                l1_members = [m for m in members if m.get("role_name") == l1_role["name"] and not m.get("region")]
+                l1_node = {**l1_role, "members": l1_members, "children": []}
                 
-                # Operations Managers per region
-                for region in REGIONS:
-                    om = next((r for r in roles if r["level"] == 2 and r.get("region") == region), None)
-                    if om:
-                        om_members = [m for m in members if m.get("role_name") == "Operations Manager" and m.get("region") == region]
-                        om_node = {**om, "members": om_members, "children": []}
-                        
-                        # Field-level roles under each region
-                        for level_role in [r for r in roles if r["level"] >= 3 and not r.get("region")]:
-                            level_members = [m for m in members if m.get("role_name") == level_role["name"] and m.get("region") == region]
-                            if level_members or True:  # Always show roles
-                                child_node = {**level_role, "region": region, "members": level_members, "children": []}
-                                om_node["children"].append(child_node)
-                        
-                        hoo_node["children"].append(om_node)
+                # Only Head of Operations has regional children
+                if l1_role["name"] == "Head of Operations":
+                    # Operations Managers per region
+                    for region in REGIONS:
+                        om = next((r for r in roles if r["level"] == 2 and r.get("region") == region), None)
+                        if om:
+                            om_members = [m for m in members if m.get("role_name") == "Operations Manager" and m.get("region") == region]
+                            om_node = {**om, "members": om_members, "children": []}
+                            
+                            # Field-level roles under each region
+                            for level_role in [r for r in roles if r["level"] >= 3 and not r.get("region")]:
+                                level_members = [m for m in members if m.get("role_name") == level_role["name"] and m.get("region") == region]
+                                if level_members or True:  # Always show roles
+                                    child_node = {**level_role, "region": region, "members": level_members, "children": []}
+                                    om_node["children"].append(child_node)
+                            
+                            l1_node["children"].append(om_node)
                 
-                ceo_node["children"].append(hoo_node)
+                ceo_node["children"].append(l1_node)
             
             tree.append(ceo_node)
         

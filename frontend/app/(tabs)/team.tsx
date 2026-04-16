@@ -485,13 +485,24 @@ export default function TeamScreen() {
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Search Salesforce User */}
-              <Text style={styles.fieldLabel}>Team Member (Search Salesforce Users) *</Text>
+              {/* Search Salesforce User or Type Name Directly */}
+              <Text style={styles.fieldLabel}>Team Member Name *</Text>
               <TextInput
                 style={styles.input}
                 value={userSearch}
-                onChangeText={searchSfUsers}
-                placeholder="Type 2+ letters to search active users..."
+                onChangeText={(text) => {
+                  setUserSearch(text);
+                  // Also set member_name directly for typed entries
+                  setAssignForm({...assignForm, member_name: text});
+                  // Search SF users if 2+ chars
+                  if (text.length >= 2) {
+                    searchSfUsers(text);
+                  } else {
+                    setSfUsers([]);
+                    setShowUserPicker(false);
+                  }
+                }}
+                placeholder="Type name or search Salesforce users..."
                 placeholderTextColor={COLORS.grayDark}
               />
               {loadingUsers && (
