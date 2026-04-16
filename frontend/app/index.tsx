@@ -21,7 +21,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Video, ResizeMode } from 'expo-av';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { API_BASE_URL } from '../utils/api';
+
+const API_URL = API_BASE_URL;
 
 // Blue Box Air colors
 const COLORS = {

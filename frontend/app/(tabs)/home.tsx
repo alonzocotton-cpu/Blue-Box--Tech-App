@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
+import { API_BASE_URL } from '../../utils/api';
 
 // Configure notification handling
 Notifications.setNotificationHandler({
@@ -30,7 +31,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const API_URL = API_BASE_URL;
 
 const COLORS = {
   navy: '#0f2744',
@@ -44,6 +45,7 @@ const COLORS = {
   blue: '#3b82f6',
   purple: '#8b5cf6',
   orange: '#f59e0b',
+  red: '#ef4444',
 };
 
 const LOGO_URI = 'https://customer-assets.emergentagent.com/job_ff19b27f-9c44-4d68-b174-1452a3057557/artifacts/2vycib7s_IMG_2827.jpeg';
@@ -64,6 +66,7 @@ const SUPERVISORS_MANAGERS = [
 export default function HomeScreen() {
   const [technician, setTechnician] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
+  const [coilOfMonth, setCoilOfMonth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const notificationListener = useRef<any>();
   const responseListener = useRef<any>();
@@ -171,9 +174,10 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const [techData, statsRes] = await Promise.all([
+      const [techData, statsRes, coilRes] = await Promise.all([
         AsyncStorage.getItem('technician'),
         fetch(`${API_URL}/api/dashboard/stats`),
+        fetch(`${API_URL}/api/coil-of-month/current`).catch(() => null),
       ]);
       if (techData) {
         const tech = JSON.parse(techData);
@@ -188,6 +192,14 @@ export default function HomeScreen() {
       }
       const statsData = await statsRes.json();
       setStats(statsData);
+      
+      // Load Coil of the Month
+      if (coilRes) {
+        try {
+          const coilData = await coilRes.json();
+          if (coilData.current) setCoilOfMonth(coilData.current);
+        } catch {}
+      }
     } catch (error) {
       console.error('Error loading home data:', error);
     } finally {
@@ -428,6 +440,46 @@ export default function HomeScreen() {
               <Text style={styles.statLabel}>Projects</Text>
             </View>
           </View>
+        )}
+
+        {/* Coil of the Month Featured Banner */}
+        {coilOfMonth && (
+          <TouchableOpacity
+            style={styles.coilBanner}
+            activeOpacity={0.85}
+            onPress={() => router.push('/(tabs)/coil')}
+          >
+            <View style={styles.coilBannerBadge}>
+              <Ionicons name="trophy" size={10} color={COLORS.navy} />
+              <Text style={styles.coilBannerBadgeText}>COIL OF THE MONTH</Text>
+            </View>
+            <View style={styles.coilBannerContent}>
+              {coilOfMonth.media_type === 'video' ? (
+                <View style={styles.coilBannerThumb}>
+                  <Ionicons name="play-circle" size={28} color={COLORS.lime} />
+                </View>
+              ) : (
+                <Image source={{ uri: coilOfMonth.media }} style={styles.coilBannerThumb} resizeMode="cover" />
+              )}
+              <View style={styles.coilBannerText}>
+                <Text style={styles.coilBannerTitle} numberOfLines={1}>{coilOfMonth.title}</Text>
+                {coilOfMonth.unit_name ? (
+                  <View style={styles.coilBannerUnit}>
+                    <Ionicons name="cube-outline" size={10} color={COLORS.lime} />
+                    <Text style={styles.coilBannerUnitText}>{coilOfMonth.unit_name}</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.coilBannerDesc} numberOfLines={2}>{coilOfMonth.description}</Text>
+                <View style={styles.coilBannerStats}>
+                  <Ionicons name="heart" size={12} color={COLORS.red || '#ef4444'} />
+                  <Text style={styles.coilBannerStatText}>{coilOfMonth.love_count || 0}</Text>
+                  <Ionicons name="chatbubble" size={12} color={COLORS.grayDark} style={{ marginLeft: 8 }} />
+                  <Text style={styles.coilBannerStatText}>{(coilOfMonth.comments || []).length}</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.grayDark} />
+            </View>
+          </TouchableOpacity>
         )}
 
         {/* Dashboard Cards */}
@@ -672,6 +724,48 @@ const styles = StyleSheet.create({
     color: COLORS.grayDark,
     marginTop: 2,
   },
+  // Coil of the Month Banner
+  coilBanner: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: '#162d4a',
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.lime + '30',
+  },
+  coilBannerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.lime,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+    borderBottomRightRadius: 10,
+  },
+  coilBannerBadgeText: { fontSize: 9, fontWeight: '800', color: COLORS.navy, letterSpacing: 1 },
+  coilBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    gap: 12,
+  },
+  coilBannerThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: '#1e3a5f',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  coilBannerText: { flex: 1 },
+  coilBannerTitle: { fontSize: 14, fontWeight: '700', color: COLORS.white, marginBottom: 2 },
+  coilBannerUnit: { flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 3 },
+  coilBannerUnitText: { fontSize: 10, fontWeight: '600', color: COLORS.lime },
+  coilBannerDesc: { fontSize: 12, color: COLORS.gray, lineHeight: 16, marginBottom: 4 },
+  coilBannerStats: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  coilBannerStatText: { fontSize: 11, color: COLORS.grayDark },
 });
 
 const setupStyles = StyleSheet.create({

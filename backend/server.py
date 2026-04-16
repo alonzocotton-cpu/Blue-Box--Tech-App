@@ -2540,6 +2540,135 @@ async def send_push_notifications(user_ids: list, title: str, body: str, data: d
         logging.error(f"Failed to send push notifications: {e}")
         return {"sent": 0, "error": str(e)}
 
+# ============== COIL OF THE MONTH ==============
+
+@api_router.get("/coil-of-month")
+async def get_coil_of_month_entries():
+    """Get all Coil of the Month entries, latest first"""
+    entries = await db.coil_of_month.find({}).sort("created_at", -1).to_list(50)
+    return [serialize_doc(e) for e in entries]
+
+@api_router.get("/coil-of-month/current")
+async def get_current_coil_of_month():
+    """Get the latest/current featured Coil of the Month"""
+    entry = await db.coil_of_month.find_one({}, sort=[("created_at", -1)])
+    if not entry:
+        return {"current": None}
+    return {"current": serialize_doc(entry)}
+
+@api_router.post("/coil-of-month")
+async def create_coil_of_month(data: dict):
+    """Admin creates a new Coil of the Month entry"""
+    email = data.get("email", "")
+    # Check admin
+    admin = await db.admins.find_one({"email": email})
+    if not admin:
+        raise HTTPException(status_code=403, detail="Only administrators can post Coil of the Month")
+    
+    description = data.get("description", "").strip()
+    # Validate 150 word limit
+    word_count = len(description.split()) if description else 0
+    if word_count > 150:
+        raise HTTPException(status_code=400, detail=f"Description must be 150 words or less (currently {word_count} words)")
+    
+    media = data.get("media", "")
+    media_type = data.get("media_type", "photo")  # "photo" or "video"
+    title = data.get("title", "").strip() or f"Coil of the Month - {datetime.utcnow().strftime('%B %Y')}"
+    unit_name = data.get("unit_name", "").strip()
+    
+    if not media:
+        raise HTTPException(status_code=400, detail="Please upload a photo or video")
+    
+    entry = {
+        "title": title,
+        "description": description,
+        "media": media,
+        "media_type": media_type,
+        "unit_name": unit_name,
+        "created_by": email,
+        "created_by_name": data.get("created_by_name", "Admin"),
+        "created_at": datetime.utcnow().isoformat(),
+        "month": datetime.utcnow().strftime("%B"),
+        "year": datetime.utcnow().year,
+        "loves": [],
+        "love_count": 0,
+        "comments": [],
+    }
+    
+    result = await db.coil_of_month.insert_one(entry)
+    entry["_id"] = result.inserted_id
+    return {"success": True, "entry": serialize_doc(entry)}
+
+@api_router.post("/coil-of-month/{entry_id}/love")
+async def toggle_love(entry_id: str, data: dict):
+    """Toggle love reaction on a Coil of the Month entry"""
+    user_email = data.get("email", "")
+    if not user_email:
+        raise HTTPException(status_code=400, detail="Email required")
+    
+    try:
+        oid = ObjectId(entry_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid entry ID")
+    
+    entry = await db.coil_of_month.find_one({"_id": oid})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    loves = entry.get("loves", [])
+    if user_email in loves:
+        # Remove love
+        loves.remove(user_email)
+        action = "unloved"
+    else:
+        # Add love
+        loves.append(user_email)
+        action = "loved"
+    
+    await db.coil_of_month.update_one(
+        {"_id": oid},
+        {"$set": {"loves": loves, "love_count": len(loves)}}
+    )
+    return {"success": True, "action": action, "love_count": len(loves), "loved": user_email in loves}
+
+@api_router.post("/coil-of-month/{entry_id}/comments")
+async def add_comment(entry_id: str, data: dict):
+    """Add a comment to a Coil of the Month entry (max 25 words)"""
+    user_email = data.get("email", "")
+    user_name = data.get("name", "Anonymous")
+    text = data.get("text", "").strip()
+    
+    if not text:
+        raise HTTPException(status_code=400, detail="Comment text required")
+    
+    word_count = len(text.split())
+    if word_count > 25:
+        raise HTTPException(status_code=400, detail=f"Comments must be 25 words or less (currently {word_count} words)")
+    
+    try:
+        oid = ObjectId(entry_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid entry ID")
+    
+    entry = await db.coil_of_month.find_one({"_id": oid})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    comment = {
+        "id": str(ObjectId()),
+        "email": user_email,
+        "name": user_name,
+        "text": text,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    
+    await db.coil_of_month.update_one(
+        {"_id": oid},
+        {"$push": {"comments": comment}}
+    )
+    return {"success": True, "comment": comment}
+
+
 # Include the router in the main app
 app.include_router(api_router)
 

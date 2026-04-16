@@ -501,6 +501,102 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: GET /api/auth/profile returns technician profile data with all required fields including full_name, email, phone, skills, and company information. Profile fetch working correctly."
 
+  - task: "Coil of the Month List API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/coil-of-month returns array of entries with all required fields (_id, title, description, media, media_type, unit_name, created_by, created_by_name, created_at, month, year, loves, love_count, comments). Returns existing entry with 2 loves and 1 comment. Endpoint working correctly."
+
+  - task: "Coil of the Month Current API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/coil-of-month/current returns object with 'current' key containing latest entry. Returns most recent entry (June 2026 - Stunning Coil Restoration) with complete data structure. Endpoint working correctly."
+
+  - task: "Coil of the Month Create API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/coil-of-month with admin email (alonzo.cotton@blueboxair.com) successfully creates entry with test data (title: 'Test Coil', description: 'A short test description.', media: base64 image, media_type: 'photo', unit_name: 'RTU-002', created_by_name: 'Alonzo Cotton'). Returns success=true and complete entry object with generated _id. Admin authorization working correctly."
+
+  - task: "Coil of the Month Admin Authorization"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/coil-of-month with non-admin email (john@test.com) correctly returns 403 'Only administrators can post Coil of the Month'. Admin authorization check working properly - only admins can create entries."
+
+  - task: "Coil of the Month Love Toggle API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/coil-of-month/{id}/love with email 'user@test.com' successfully toggles love. First call returns success=true, action='loved', love_count=1, loved=true. Second call returns success=true, action='unloved', love_count=0, loved=false. Love toggle functionality working correctly."
+
+  - task: "Coil of the Month Comments API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/coil-of-month/{id}/comments with valid comment (email: 'user@test.com', name: 'Test User', text: 'Looks great!') successfully returns success=true and comment object with generated id, email, name, text, created_at. Comment validation working - 30-word comment correctly rejected with 400 'Comments must be 25 words or less (currently 30 words)'. Comment creation and validation working correctly."
+
+  - task: "Auth Login API Regression"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/login with test credentials {'username': 'test', 'password': 'test'} successfully returns success=true, technician data (BBA TEST APP from Salesforce profile), and JWT token. Login regression test passed - no breaking changes detected."
+
+  - task: "Projects List API Regression"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/projects returns array of 9 projects including 3 mock projects and 6 custom projects with all required fields (name, client, status, primary_contact). Projects regression test passed - no breaking changes detected."
+
 frontend:
   - task: "Login Screen"
     implemented: true
@@ -742,7 +838,13 @@ agent_communication:
     message: "Fixed Profile Setup flow: 1) Fixed routing so login always navigates to /(tabs)/home which handles profile setup detection client-side by checking if first_name is missing from stored technician data. 2) Changed profile save endpoint from POST /api/auth/profile/setup (broken via external proxy) to PUT /api/auth/profile (works via external proxy). 3) Frontend updates AsyncStorage locally with profile data after save. 4) Profile Setup form fully functional: shows on first login, includes First Name, Last Name, Position dropdown (Operations Manager, Senior Technician, Junior Technician), Supervisor dropdown (Alonzo Cotton, Ramon Reyes, Mizael Contreras, Anthony Reddix), Phone, Profile Photo upload. After completing setup, transitions to normal home screen with correct welcome message. Please retest PUT /api/auth/profile endpoint."
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Coil of the Month List API"
+    - "Coil of the Month Current API"
+    - "Coil of the Month Create API"
+    - "Coil of the Month Admin Authorization"
+    - "Coil of the Month Love Toggle API"
+    - "Coil of the Month Comments API"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -790,4 +892,6 @@ agent_communication:
     message: "✅ REVIEW REQUEST TESTING COMPLETE: All 5 requested team management endpoints tested successfully with 100% functional rate. Key findings: 1) PUT /api/roles/assign/Test%20Tech with admin requester (alonzo.cotton@blueboxair.com) successfully updates role from Technician to Lead Technician - role update working correctly. 2) POST /api/roles/assign with admin requester successfully assigns Test Tech 2 as Technician in Florida region - admin role assignment working. 3) POST /api/roles/assign with non-admin requester (notadmin@example.com) correctly returns 403 'Only administrators can assign roles' - security authorization working properly. 4) GET /api/projects/proj-001/technicians returns technicians list with Jane Doe assigned - project tech listing working. 5) POST /api/projects/proj-001/technicians with admin requester successfully assigns technicians to projects (duplicate prevention working with 400 error for existing assignments). CRITICAL SECURITY FIXES CONFIRMED: Admin authorization now properly enforced on all role assignment endpoints, non-admin users correctly blocked with 403 errors, all missing routes (PUT role update, GET/POST project technicians) now implemented and functional. Previous security vulnerabilities have been resolved. All endpoints working as specified in review request."
   - agent: "testing"
     message: "✅ BLUE BOX AIR BACKEND API REVIEW REQUEST TESTING COMPLETE: All 5 requested endpoints tested successfully with 100% pass rate. Key findings: 1) PUT /api/auth/profile with profile data {'first_name': 'TestFirst', 'last_name': 'TestLast', 'position': 'Senior Technician', 'supervisor': 'Ramon Reyes', 'phone': '555-0000', 'profile_completed': true} returns success=true and complete profile object - profile setup/update working correctly. 2) POST /api/auth/login with test credentials {'username': 'test', 'password': 'test'} returns success=true, technician data (John Smith), and JWT token - login regression test passed. 3) GET /api/projects returns array of 3 projects with all required fields (name, client, status) and primary_contact information - projects list working correctly. 4) GET /api/dashboard/stats returns correct stats with total_projects=3, active=3, total_equipment=68 - dashboard stats working correctly. 5) GET /api/auth/profile returns technician profile data with all required fields - profile fetch working correctly. All Blue Box Air backend endpoints working as specified in the review request, no critical issues found."
+  - agent: "testing"
+    message: "✅ COIL OF THE MONTH API TESTING COMPLETE: All 10 requested endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/coil-of-month returns array of entries with complete data structure (existing entry: 'June 2026 - Stunning Coil Restoration' with 2 loves, 1 comment). 2) GET /api/coil-of-month/current returns object with 'current' key containing latest entry. 3) POST /api/coil-of-month with admin email (alonzo.cotton@blueboxair.com) successfully creates entry with test data, returns success=true and complete entry object. 4) POST /api/coil-of-month with non-admin email (john@test.com) correctly returns 403 'Only administrators can post Coil of the Month' - admin authorization working. 5) POST /api/coil-of-month/{id}/love toggles correctly: first call returns action='loved', love_count=1; second call returns action='unloved', love_count=0. 6) POST /api/coil-of-month/{id}/comments with valid comment returns success=true and comment object. 7) Comment validation working: 30-word comment correctly rejected with 400 'Comments must be 25 words or less'. 8) POST /api/auth/login regression test passed (returns BBA TEST APP from Salesforce profile). 9) GET /api/projects regression test passed (returns 9 projects). All Coil of the Month endpoints working correctly with proper admin authorization, love toggle functionality, comment validation, and no regressions detected. NOTE: External proxy routing issue detected - endpoints work on localhost:8001 but return 404 on external URL."
 
