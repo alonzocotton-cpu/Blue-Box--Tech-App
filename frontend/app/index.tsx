@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,15 @@ import {
   Alert,
   Linking,
   Image,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { Video, ResizeMode } from 'expo-av';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -30,6 +33,10 @@ const COLORS = {
   grayDark: '#64748b',
   google: '#4285F4',
 };
+
+// Splash video URL
+const SPLASH_VIDEO_URL = 'https://customer-assets.emergentagent.com/job_ff19b27f-9c44-4d68-b174-1452a3057557/artifacts/k1qp7et6_IMG_3237.mov';
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Blue Box Air Logo Component - Uses the exact company logo image
 const LOGO_URI = 'https://customer-assets.emergentagent.com/job_ff19b27f-9c44-4d68-b174-1452a3057557/artifacts/2vycib7s_IMG_2827.jpeg';
@@ -51,6 +58,10 @@ export default function LoginScreen() {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
   const [autoLoginChecked, setAutoLoginChecked] = useState(false);
+  const [showSplashVideo, setShowSplashVideo] = useState(false);
+  const videoRef = useRef<any>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const textFadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     initializeLogin();
@@ -137,9 +148,37 @@ export default function LoginScreen() {
     }
   };
 
-  // Helper: navigate after auth - always go to home, home handles profile setup check
+  // Helper: navigate after auth - show splash video first, then go to home
   const navigateAfterAuth = async () => {
+    setShowSplashVideo(true);
+    // Start fade-in animation for branding overlay
+    Animated.sequence([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.delay(500),
+      Animated.timing(textFadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleVideoEnd = () => {
+    // Fade out and navigate
+    Animated.timing(fadeAnim, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
+      setShowSplashVideo(false);
+      router.replace('/(tabs)/home');
+    });
+  };
+
+  const handleSkipVideo = () => {
+    setShowSplashVideo(false);
     router.replace('/(tabs)/home');
+  };
+
+  const handleVideoError = () => {
+    console.log('Video failed to load, skipping splash');
+    // If video fails to load, just navigate after a short delay
+    setTimeout(() => {
+      setShowSplashVideo(false);
+      router.replace('/(tabs)/home');
+    }, 2000);
   };
 
   const loadSavedCredentials = async () => {
@@ -309,6 +348,48 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
+
+  // Show splash video after login
+  if (showSplashVideo) {
+    return (
+      <View style={splashStyles.container}>
+        <Video
+          ref={videoRef}
+          source={{ uri: SPLASH_VIDEO_URL }}
+          style={splashStyles.video}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={true}
+          isLooping={false}
+          isMuted={true}
+          onPlaybackStatusUpdate={(status: any) => {
+            if (status.didJustFinish) {
+              handleVideoEnd();
+            }
+          }}
+          onError={handleVideoError}
+        />
+        {/* Dark overlay for readability */}
+        <View style={splashStyles.overlay} />
+        {/* Branding overlay */}
+        <Animated.View style={[splashStyles.brandingContainer, { opacity: fadeAnim }]}>
+          <BlueBoxLogo size={90} />
+          <Animated.View style={[splashStyles.textContainer, { opacity: textFadeAnim }]}>
+            <Text style={splashStyles.brandTitle}>BLUE BOX AIR</Text>
+            <Text style={splashStyles.brandSubtitle}>Coil Management Solutions</Text>
+            <View style={splashStyles.loadingRow}>
+              <ActivityIndicator size="small" color={COLORS.lime} />
+              <Text style={splashStyles.loadingText}>Loading your workspace...</Text>
+            </View>
+          </Animated.View>
+        </Animated.View>
+        {/* Skip button */}
+        <TouchableOpacity style={splashStyles.skipButton} onPress={handleSkipVideo} activeOpacity={0.7}>
+          <Text style={splashStyles.skipText}>Skip</Text>
+          <Ionicons name="chevron-forward" size={16} color={COLORS.white} />
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -602,5 +683,88 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.lime,
     fontWeight: '500',
+  },
+});
+
+const splashStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  video: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 39, 68, 0.55)',
+  },
+  brandingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: 60,
+  },
+  textContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  brandTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: COLORS.white,
+    letterSpacing: 3,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  brandSubtitle: {
+    fontSize: 15,
+    color: COLORS.lime,
+    fontWeight: '600',
+    marginTop: 6,
+    letterSpacing: 1.5,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 30,
+    gap: 10,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+  },
+  skipButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 4,
+  },
+  skipText: {
+    fontSize: 14,
+    color: COLORS.white,
+    fontWeight: '600',
   },
 });
