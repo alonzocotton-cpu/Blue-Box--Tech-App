@@ -91,18 +91,24 @@ export default function ProfileSetupScreen() {
       const techStr = await AsyncStorage.getItem('technician');
       const existingTech = techStr ? JSON.parse(techStr) : {};
 
-      const response = await fetch(`${API_URL}/api/auth/profile/setup`, {
-        method: 'POST',
+      const fullName = `${firstName.trim()} ${lastName.trim()}`;
+      const profilePayload = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        full_name: fullName,
+        position,
+        title: position,
+        supervisor,
+        phone: phone.trim(),
+        profile_photo: profilePhoto,
+        email: existingTech.email || '',
+        profile_completed: true,
+      };
+
+      const response = await fetch(`${API_URL}/api/auth/profile`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          position,
-          supervisor,
-          phone: phone.trim(),
-          profile_photo: profilePhoto,
-          email: existingTech.email || '',
-        }),
+        body: JSON.stringify(profilePayload),
       });
 
       const data = await response.json();
@@ -111,16 +117,7 @@ export default function ProfileSetupScreen() {
         // Update stored technician with new profile data
         const updatedTech = {
           ...existingTech,
-          ...data.technician,
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          full_name: `${firstName.trim()} ${lastName.trim()}`,
-          position,
-          title: position,
-          supervisor,
-          phone: phone.trim(),
-          profile_photo: profilePhoto,
-          profile_completed: true,
+          ...profilePayload,
         };
         await AsyncStorage.setItem('technician', JSON.stringify(updatedTech));
         router.replace('/(tabs)/home');

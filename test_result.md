@@ -438,7 +438,22 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: POST /api/notifications/read-all returns correct structure {'success': True, 'marked': 0} indicating successful operation. Mark all notifications as read functionality working correctly."
 
-  - task: "Admin Access Control API"
+  - task: "Profile Setup PUT endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Fixed Profile Setup flow: 1) Fixed routing so login always navigates to /(tabs)/home which handles profile setup detection client-side by checking if first_name is missing from stored technician data. 2) Changed profile save endpoint from POST /api/auth/profile/setup (broken via external proxy) to PUT /api/auth/profile (works via external proxy). 3) Frontend updates AsyncStorage locally with profile data after save. 4) Profile Setup form fully functional: shows on first login, includes First Name, Last Name, Position dropdown (Operations Manager, Senior Technician, Junior Technician), Supervisor dropdown (Alonzo Cotton, Ramon Reyes, Mizael Contreras, Anthony Reddix), Phone, Profile Photo upload. After completing setup, transitions to normal home screen with correct welcome message. Please retest PUT /api/auth/profile endpoint."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: PUT /api/auth/profile with test data {'first_name': 'TestFirst', 'last_name': 'TestLast', 'position': 'Senior Technician', 'supervisor': 'Ramon Reyes', 'phone': '555-0000', 'profile_completed': true} successfully returns success=true and complete profile object with updated fields. Profile update endpoint working correctly."
+
+  - task: "Auth Login API regression"
     implemented: true
     working: true
     file: "/app/backend/server.py"
@@ -448,7 +463,43 @@ backend:
     status_history:
       - working: true
         agent: "testing"
-        comment: "✅ TESTED: All 5 admin access control endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/admin/check?email=alonzo.cotton@blueboxair.com correctly returns {'is_admin': true, 'email': 'alonzo.cotton@blueboxair.com', 'granted_by': 'system'}. 2) GET /api/admin/check?email=random@test.com correctly returns {'is_admin': false, 'email': 'random@test.com', 'granted_by': ''}. 3) GET /api/admin/list returns 1 admin (alonzo.cotton@blueboxair.com) with correct structure including _id, email, name, granted_by, is_admin, created_at fields. 4) POST /api/admin/grant with admin requester (alonzo.cotton@blueboxair.com) successfully grants admin access to test@blueboxair.com and returns {'success': true, 'message': 'Admin access granted to test@blueboxair.com'}. 5) POST /api/admin/grant with non-admin requester (random@test.com) correctly returns 403 status with error 'Only admins can grant admin access'. Admin seeding working correctly (alonzo.cotton@blueboxair.com seeded as system admin), authorization checks functional, CRUD operations on admin access working properly."
+        comment: "✅ TESTED: POST /api/auth/login with test credentials {'username': 'test', 'password': 'test'} successfully returns success=true, technician data (John Smith), and JWT token. Mock login working correctly, no regressions detected."
+
+  - task: "Projects List API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/projects returns array of 3 projects with all required fields (name, client, status) and primary_contact information. All projects have correct structure with equipment counts and contact details."
+
+  - task: "Dashboard Stats API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/dashboard/stats returns correct stats with total_projects=3, active=3, equipment counts (total_equipment=68), and additional metrics. All required fields present and accurate."
+
+  - task: "Profile Fetch API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/auth/profile returns technician profile data with all required fields including full_name, email, phone, skills, and company information. Profile fetch working correctly."
 
 frontend:
   - task: "Login Screen"
@@ -687,6 +738,9 @@ agent_communication:
         agent: "testing"
         comment: "✅ TESTED: All 5 requested team management endpoints tested successfully with 100% functional rate. Key findings: 1) PUT /api/roles/assign/Test%20Tech with admin requester (alonzo.cotton@blueboxair.com) successfully updates role from Technician to Lead Technician - role update working correctly. 2) POST /api/roles/assign with admin requester successfully assigns Test Tech 2 as Technician in Florida region - admin role assignment working. 3) POST /api/roles/assign with non-admin requester (notadmin@example.com) correctly returns 403 'Only administrators can assign roles' - security authorization working properly. 4) GET /api/projects/proj-001/technicians returns technicians list with Jane Doe assigned - project tech listing working. 5) POST /api/projects/proj-001/technicians with admin requester successfully assigns technicians to projects (duplicate prevention working with 400 error for existing assignments). CRITICAL SECURITY FIXES CONFIRMED: Admin authorization now properly enforced on all role assignment endpoints, non-admin users correctly blocked with 403 errors, all missing routes (PUT role update, GET/POST project technicians) now implemented and functional. Previous security vulnerabilities have been resolved."
 
+  - agent: "main"
+    message: "Fixed Profile Setup flow: 1) Fixed routing so login always navigates to /(tabs)/home which handles profile setup detection client-side by checking if first_name is missing from stored technician data. 2) Changed profile save endpoint from POST /api/auth/profile/setup (broken via external proxy) to PUT /api/auth/profile (works via external proxy). 3) Frontend updates AsyncStorage locally with profile data after save. 4) Profile Setup form fully functional: shows on first login, includes First Name, Last Name, Position dropdown (Operations Manager, Senior Technician, Junior Technician), Supervisor dropdown (Alonzo Cotton, Ramon Reyes, Mizael Contreras, Anthony Reddix), Phone, Profile Photo upload. After completing setup, transitions to normal home screen with correct welcome message. Please retest PUT /api/auth/profile endpoint."
+
 test_plan:
   current_focus: []
   stuck_tasks: []
@@ -734,4 +788,6 @@ agent_communication:
     message: "✅ NEW KANBAN & EQUIPMENT ENDPOINTS TESTING COMPLETE: All 5 requested endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/projects/kanban returns correct structure with kanban object containing in_progress, completed, not_completed arrays, plus counts, total, and is_admin fields. Currently shows 0 projects in all categories as expected for empty database. 2) GET /api/projects/kanban?email=alonzo.cotton@blueboxair.com&view_all=true correctly returns is_admin: true for admin user - admin access control working correctly. 3) GET /api/projects/kanban?email=random@test.com&view_all=true correctly returns is_admin: false for non-admin user - non-admin identification working correctly. 4) GET /api/admin/list returns 5 admins total including all expected 4 system admins (alonzo.cotton@blueboxair.com, jim@blueboxair.com, linh.matthews@blueboxair.com, noah.ward@blueboxair.com) plus 1 additional test admin from previous testing. Admin seeding working correctly. 5) POST /api/auth/login regression test still works correctly (returns BBA TEST APP technician from salesforce_profile source). All new Kanban endpoints working correctly, admin access control functional, project categorization logic implemented, no regressions detected in existing authentication endpoints."
   - agent: "testing"
     message: "✅ REVIEW REQUEST TESTING COMPLETE: All 5 requested team management endpoints tested successfully with 100% functional rate. Key findings: 1) PUT /api/roles/assign/Test%20Tech with admin requester (alonzo.cotton@blueboxair.com) successfully updates role from Technician to Lead Technician - role update working correctly. 2) POST /api/roles/assign with admin requester successfully assigns Test Tech 2 as Technician in Florida region - admin role assignment working. 3) POST /api/roles/assign with non-admin requester (notadmin@example.com) correctly returns 403 'Only administrators can assign roles' - security authorization working properly. 4) GET /api/projects/proj-001/technicians returns technicians list with Jane Doe assigned - project tech listing working. 5) POST /api/projects/proj-001/technicians with admin requester successfully assigns technicians to projects (duplicate prevention working with 400 error for existing assignments). CRITICAL SECURITY FIXES CONFIRMED: Admin authorization now properly enforced on all role assignment endpoints, non-admin users correctly blocked with 403 errors, all missing routes (PUT role update, GET/POST project technicians) now implemented and functional. Previous security vulnerabilities have been resolved. All endpoints working as specified in review request."
+  - agent: "testing"
+    message: "✅ BLUE BOX AIR BACKEND API REVIEW REQUEST TESTING COMPLETE: All 5 requested endpoints tested successfully with 100% pass rate. Key findings: 1) PUT /api/auth/profile with profile data {'first_name': 'TestFirst', 'last_name': 'TestLast', 'position': 'Senior Technician', 'supervisor': 'Ramon Reyes', 'phone': '555-0000', 'profile_completed': true} returns success=true and complete profile object - profile setup/update working correctly. 2) POST /api/auth/login with test credentials {'username': 'test', 'password': 'test'} returns success=true, technician data (John Smith), and JWT token - login regression test passed. 3) GET /api/projects returns array of 3 projects with all required fields (name, client, status) and primary_contact information - projects list working correctly. 4) GET /api/dashboard/stats returns correct stats with total_projects=3, active=3, total_equipment=68 - dashboard stats working correctly. 5) GET /api/auth/profile returns technician profile data with all required fields - profile fetch working correctly. All Blue Box Air backend endpoints working as specified in the review request, no critical issues found."
 

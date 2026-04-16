@@ -137,20 +137,8 @@ export default function LoginScreen() {
     }
   };
 
-  // Helper: navigate based on profile completion status
+  // Helper: navigate after auth - always go to home, home handles profile setup check
   const navigateAfterAuth = async () => {
-    try {
-      const techStr = await AsyncStorage.getItem('technician');
-      if (techStr) {
-        const tech = JSON.parse(techStr);
-        if (tech.profile_completed === false) {
-          router.replace('/profile-setup');
-          return;
-        }
-      }
-    } catch (e) {
-      console.log('Profile check error:', e);
-    }
     router.replace('/(tabs)/home');
   };
 

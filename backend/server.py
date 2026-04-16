@@ -546,9 +546,14 @@ async def login(credentials: TechnicianLogin):
     
     # Check if this user has completed profile setup
     email = technician.get("email", "")
-    existing_profile = await db.profiles.find_one({"email": email, "profile_completed": True})
-    technician["profile_completed"] = existing_profile is not None
-    logging.info(f"LOGIN: email={email}, profile_completed={technician['profile_completed']}, existing_profile={existing_profile is not None}")
+    try:
+        existing_profile = await db.profiles.find_one({"email": email, "profile_completed": True})
+        technician["profile_completed"] = existing_profile is not None
+    except Exception as profile_err:
+        logging.error(f"Profile check error: {profile_err}")
+        technician["profile_completed"] = False
+    
+    logging.warning(f"MOCK LOGIN: email={email}, profile_completed={technician.get('profile_completed')}, keys={list(technician.keys())}")
     
     return {
         "success": True,
@@ -1694,7 +1699,7 @@ async def update_profile(profile_data: dict):
     merged = {**MOCK_DATA["technician"], **update_data}
     return {"success": True, "profile": merged}
 
-@api_router.get("/auth/profile/check")
+@api_router.get("/auth/check-profile")
 async def check_profile_completed(email: str = ""):
     """Check if a user has completed their profile setup"""
     if not email:
@@ -1702,7 +1707,7 @@ async def check_profile_completed(email: str = ""):
     completed = await db.profiles.find_one({"email": email, "profile_completed": True})
     return {"profile_completed": completed is not None}
 
-@api_router.post("/auth/profile/setup")
+@api_router.post("/auth/setup-profile")
 async def setup_profile(profile_data: dict):
     """First-time profile setup for new technicians"""
     first_name = profile_data.get("first_name", "").strip()

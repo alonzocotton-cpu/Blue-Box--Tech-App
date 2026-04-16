@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Blue Box Air Team Management Backend API Testing
-Tests the admin access control and role assignment endpoints
+Blue Box Air Backend API Testing
+Tests the specific endpoints requested in the review
 """
 
 import requests
@@ -67,110 +67,52 @@ def test_endpoint(method, endpoint, data=None, params=None, expected_status=200)
         }
 
 def main():
-    """Run all Blue Box Air team management tests"""
-    print("🔧 Blue Box Air Team Management Backend API Testing")
+    """Run all Blue Box Air backend API tests for the review request"""
+    print("🔧 Blue Box Air Backend API Testing - Review Request")
     print(f"Backend URL: {BACKEND_URL}")
     
     test_results = []
     
-    # Test 1: Admin Check - alonzo.cotton@blueboxair.com should be admin
+    # Test 1: PUT /api/auth/profile - Profile Setup/Update endpoint
     print("\n" + "="*80)
-    print("TEST 1: Admin Check - alonzo.cotton@blueboxair.com (should be admin)")
-    result = test_endpoint("GET", "/admin/check", params={"email": "alonzo.cotton@blueboxair.com"})
-    test_results.append(result)
-    
-    # Test 2: Non-Admin Check - andy.haas@blueboxair.com should not be admin
-    print("\n" + "="*80)
-    print("TEST 2: Non-Admin Check - andy.haas@blueboxair.com (should not be admin)")
-    result = test_endpoint("GET", "/admin/check", params={"email": "andy.haas@blueboxair.com"})
-    test_results.append(result)
-    
-    # Test 3: Admin Role Assign - Admin requester should succeed
-    print("\n" + "="*80)
-    print("TEST 3: Admin Role Assign - Admin requester (should succeed)")
-    assign_data = {
-        "member_name": "Test Tech",
-        "role_name": "Technician",
-        "region": "New York",
-        "email": "test@blueboxair.com",
-        "requester_email": "alonzo.cotton@blueboxair.com"
+    print("TEST 1: PUT /api/auth/profile - Profile Setup/Update endpoint")
+    profile_data = {
+        "first_name": "TestFirst",
+        "last_name": "TestLast", 
+        "position": "Senior Technician",
+        "supervisor": "Ramon Reyes",
+        "phone": "555-0000",
+        "profile_completed": True
     }
-    result = test_endpoint("POST", "/roles/assign", data=assign_data)
+    result = test_endpoint("PUT", "/auth/profile", data=profile_data)
     test_results.append(result)
     
-    # Test 4: Non-Admin Role Assign Block - Non-admin requester should get 403
+    # Test 2: POST /api/auth/login - Login regression test
     print("\n" + "="*80)
-    print("TEST 4: Non-Admin Role Assign Block - Non-admin requester (should get 403)")
-    bad_assign_data = {
-        "member_name": "Bad Actor",
-        "role_name": "Technician",
-        "region": "New York",
-        "requester_email": "random@test.com"
-    }
-    result = test_endpoint("POST", "/roles/assign", data=bad_assign_data, expected_status=403)
-    test_results.append(result)
-    
-    # Test 5: Admin Role Update - Admin should be able to update role
-    print("\n" + "="*80)
-    print("TEST 5: Admin Role Update - Admin should be able to update role")
-    update_data = {
-        "requester_email": "alonzo.cotton@blueboxair.com",
-        "old_role_name": "Technician",
-        "old_region": "New York",
-        "new_role_name": "Lead Technician",
-        "new_region": "New York"
-    }
-    # URL encode the member name
-    member_name_encoded = quote("Test Tech")
-    result = test_endpoint("PUT", f"/roles/assign/{member_name_encoded}", data=update_data)
-    test_results.append(result)
-    
-    # Test 6: Admin Role Remove - Admin should be able to remove role
-    print("\n" + "="*80)
-    print("TEST 6: Admin Role Remove - Admin should be able to remove role")
-    remove_params = {
-        "role_name": "Lead Technician",
-        "region": "New York",
-        "requester_email": "alonzo.cotton@blueboxair.com"
-    }
-    result = test_endpoint("DELETE", f"/roles/assign/{member_name_encoded}", params=remove_params)
-    test_results.append(result)
-    
-    # Test 7: Non-Admin Role Remove Block - Non-admin should get 403
-    print("\n" + "="*80)
-    print("TEST 7: Non-Admin Role Remove Block - Non-admin should get 403")
-    bad_remove_params = {
-        "requester_email": "random@test.com"
-    }
-    result = test_endpoint("DELETE", f"/roles/assign/{member_name_encoded}", params=bad_remove_params, expected_status=403)
-    test_results.append(result)
-    
-    # Test 8: Project Tech Assign - Admin should be able to assign tech to project
-    print("\n" + "="*80)
-    print("TEST 8: Project Tech Assign - Admin should be able to assign tech to project")
-    tech_assign_data = {
-        "name": "John Smith",
-        "email": "john@blueboxair.com",
-        "role": "Lead Technician",
-        "requester_email": "alonzo.cotton@blueboxair.com"
-    }
-    result = test_endpoint("POST", "/projects/proj-001/technicians", data=tech_assign_data)
-    test_results.append(result)
-    
-    # Test 9: Get Project Techs - Should return the assigned technician
-    print("\n" + "="*80)
-    print("TEST 9: Get Project Techs - Should return the assigned technician")
-    result = test_endpoint("GET", "/projects/proj-001/technicians")
-    test_results.append(result)
-    
-    # Test 10: Login Regression - POST /api/auth/login should still work
-    print("\n" + "="*80)
-    print("TEST 10: Login Regression - POST /api/auth/login should still work")
+    print("TEST 2: POST /api/auth/login - Login regression test")
     login_data = {
         "username": "test",
         "password": "test"
     }
     result = test_endpoint("POST", "/auth/login", data=login_data)
+    test_results.append(result)
+    
+    # Test 3: GET /api/projects - Projects list
+    print("\n" + "="*80)
+    print("TEST 3: GET /api/projects - Projects list")
+    result = test_endpoint("GET", "/projects")
+    test_results.append(result)
+    
+    # Test 4: GET /api/dashboard/stats - Dashboard stats
+    print("\n" + "="*80)
+    print("TEST 4: GET /api/dashboard/stats - Dashboard stats")
+    result = test_endpoint("GET", "/dashboard/stats")
+    test_results.append(result)
+    
+    # Test 5: GET /api/auth/profile - Profile fetch
+    print("\n" + "="*80)
+    print("TEST 5: GET /api/auth/profile - Profile fetch")
+    result = test_endpoint("GET", "/auth/profile")
     test_results.append(result)
     
     # Summary
