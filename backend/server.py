@@ -292,7 +292,7 @@ async def privacy_policy():
 </div>
 
 <div class="footer">
-    <p>&copy; 2025 Blue Box Air, Inc. All rights reserved.</p>
+    <p>&copy; 2025–2026 Blue Box Air, Inc. All rights reserved.</p>
     <p>BBA Tech v1.0</p>
 </div>
 
@@ -395,7 +395,7 @@ async def terms_of_service():
 </div>
 
 <div class="footer">
-    <p>&copy; 2025 Blue Box Air, Inc. All rights reserved.</p>
+    <p>&copy; 2025–2026 Blue Box Air, Inc. All rights reserved.</p>
     <p>BBA Tech v1.0</p>
 </div>
 
@@ -3524,6 +3524,7 @@ def _build_report_pdf(
     elements.append(Spacer(1, 20))
     elements.append(Paragraph("BLUE BOX AIR, INC. — Coil Management Solutions", styles["FooterText"]))
     elements.append(Paragraph(f"Report auto-generated on {generated_at}", styles["FooterText"]))
+    elements.append(Paragraph("© 2025–2026 Blue Box Air, Inc. All rights reserved.", styles["FooterText"]))
 
     # Build
     doc.build(elements)
