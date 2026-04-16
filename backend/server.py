@@ -1997,53 +1997,108 @@ async def create_project(data: dict = Body(...)):
 @api_router.get("/projects/{project_id}")
 async def get_project(project_id: str):
     """Get a specific project with all details"""
+    project = None
+    
     # Check in custom projects first
     try:
         custom = await db.custom_projects.find_one({"id": project_id})
         if custom:
             custom["id"] = str(custom.get("_id", project_id))
             custom.pop("_id", None)
-            return custom
+            project = custom
     except: pass
     
     # Check in synced opportunities
-    try:
-        synced = await db.sf_opportunities.find_one({"salesforce_id": project_id})
-        if synced:
-            synced["id"] = str(synced.get("_id", project_id))
-            synced.pop("_id", None)
-            return synced
-    except: pass
+    if not project:
+        try:
+            synced = await db.sf_opportunities.find_one({"salesforce_id": project_id})
+            if synced:
+                synced["id"] = str(synced.get("_id", project_id))
+                synced.pop("_id", None)
+                project = synced
+        except: pass
+    
+    # Check in sf_projects collection
+    if not project:
+        try:
+            sf_proj = await db.sf_projects.find_one({"salesforce_id": project_id})
+            if sf_proj:
+                sf_proj = serialize_doc(sf_proj)
+                project = sf_proj
+        except: pass
     
     # Try to query Salesforce directly
-    try:
-        session = await db.sf_sessions.find_one({}, sort=[("updated_at", -1)])
-        if session:
-            records = await sf_query(
-                session["user_id"],
-                f"SELECT Id, Name, StageName, Description, Amount, CreatedDate, CloseDate, "
-                f"Account.Name, OwnerId, Owner.Name "
-                f"FROM Opportunity WHERE Id = '{project_id}' LIMIT 1"
-            )
-            if records:
-                r = records[0]
-                return {
-                    "id": r.get("Id", ""),
-                    "salesforce_id": r.get("Id", ""),
-                    "name": r.get("Name", ""),
-                    "description": r.get("Description", "") or "",
-                    "status": r.get("StageName", "Open"),
-                    "client_name": r.get("Account", {}).get("Name", "") if r.get("Account") else "",
-                    "amount": r.get("Amount"),
-                    "start_date": r.get("CreatedDate", ""),
-                    "end_date": r.get("CloseDate", ""),
-                    "owner_name": r.get("Owner", {}).get("Name", "") if r.get("Owner") else "",
-                    "source": "salesforce",
-                }
-    except Exception as e:
-        logging.error(f"SF project query error: {e}")
+    if not project:
+        try:
+            session = await db.sf_sessions.find_one({}, sort=[("updated_at", -1)])
+            if session:
+                records = await sf_query(
+                    session["user_id"],
+                    f"SELECT Id, Name, StageName, Description, Amount, CreatedDate, CloseDate, "
+                    f"Account.Name, OwnerId, Owner.Name "
+                    f"FROM Opportunity WHERE Id = '{project_id}' LIMIT 1"
+                )
+                if records:
+                    r = records[0]
+                    project = {
+                        "id": r.get("Id", ""),
+                        "salesforce_id": r.get("Id", ""),
+                        "name": r.get("Name", ""),
+                        "description": r.get("Description", "") or "",
+                        "status": r.get("StageName", "Open"),
+                        "client_name": r.get("Account", {}).get("Name", "") if r.get("Account") else "",
+                        "amount": r.get("Amount"),
+                        "start_date": r.get("CreatedDate", ""),
+                        "end_date": r.get("CloseDate", ""),
+                        "owner_name": r.get("Owner", {}).get("Name", "") if r.get("Owner") else "",
+                        "source": "salesforce",
+                    }
+        except Exception as e:
+            logging.error(f"SF project query error: {e}")
     
-    raise HTTPException(status_code=404, detail="Project not found")
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Ensure project_number exists
+    if not project.get("project_number"):
+        sf_id = project.get("salesforce_id", project.get("id", ""))
+        project["project_number"] = f"SF-{sf_id[-8:]}" if sf_id else f"PRJ-{project.get('id', 'unknown')[-6:]}"
+    
+    # Ensure all expected fields exist with defaults
+    project.setdefault("address", "")
+    project.setdefault("client_name", "")
+    project.setdefault("status", "Active")
+    project.setdefault("description", "")
+    project.setdefault("start_date", "")
+    project.setdefault("end_date", "")
+    
+    # Serialize dates
+    for dk in ["start_date", "end_date", "created_at", "updated_at"]:
+        if dk in project and isinstance(project[dk], datetime):
+            project[dk] = project[dk].isoformat()
+    
+    # Get related data from DB
+    equipment = []
+    # Try sf_equipment by account_name
+    account_name = project.get("client_name", "")
+    if account_name:
+        async for e in db.sf_equipment.find({"account_name": account_name}):
+            equipment.append(serialize_doc(e))
+    # Also local equipment
+    async for e in db.equipment.find({"project_id": project_id}):
+        equipment.append(serialize_doc(e))
+    
+    readings = await db.readings.find({"project_id": project_id}).to_list(100)
+    photos = await db.photos.find({"project_id": project_id}).to_list(100)
+    service_logs = await db.service_logs.find({"project_id": project_id}).to_list(100)
+    
+    return {
+        "project": project,
+        "equipment": equipment,
+        "readings": serialize_doc(readings),
+        "photos": serialize_doc(photos),
+        "service_logs": serialize_doc(service_logs),
+    }
 
 # ============ Equipment Routes ============
 
