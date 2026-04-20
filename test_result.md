@@ -930,6 +930,78 @@ agent_communication:
         agent: "testing"
         comment: "✅ TESTED: GET /api/notifications returns correct structure {'notifications': [], 'total': 0} as expected for empty notifications collection. Endpoint working correctly after MOCK_DATA removal - now queries notifications DB collection instead of hardcoded data."
 
+  - task: "Google Auth Session API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: All 3 Google Auth session endpoint tests passed with 100% success rate. Key findings: 1) POST /api/auth/google/session with empty body correctly returns 400 'session_id is required'. 2) POST /api/auth/google/session with invalid session_id 'invalid-test-123' correctly returns 401 'Google authentication failed. Please try again.' 3) POST /api/auth/google/session with test session_id correctly returns 401 (not 404/500) confirming endpoint exists and handles requests properly. Google Auth endpoint working correctly with proper validation and error handling."
+
+  - task: "Demo Account Login API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/login with demo credentials {'username': 'demo@blueboxair.com', 'password': 'BBAReview2025!'} successfully returns success=true, technician.full_name='Demo Reviewer', and valid JWT token. Demo account working correctly for App Store review process."
+
+  - task: "Salesforce Init API Regression"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/auth/salesforce/init returns 200 with auth_url containing 'login.salesforce.com' as expected. Salesforce OAuth initialization working correctly, no regressions detected."
+
+  - task: "Support Page API Regression"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/support returns 200 with HTML content containing 'BBA Tech Support' as expected. Support page working correctly, previous 500 error issue resolved."
+
+  - task: "Privacy Policy API Regression"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/privacy-policy returns 200 with HTML content as expected. Privacy policy page working correctly, no regressions detected."
+
+  - task: "Face ID Login"
+    implemented: false
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Face ID authentication is handled entirely by device's secure enclave and is never transmitted to servers (as documented in privacy policy). No backend API endpoints required for Face ID - this is a frontend/native device feature only."
+
   - agent: "main"
     message: "Fixed Profile Setup flow: 1) Fixed routing so login always navigates to /(tabs)/home which handles profile setup detection client-side by checking if first_name is missing from stored technician data. 2) Changed profile save endpoint from POST /api/auth/profile/setup (broken via external proxy) to PUT /api/auth/profile (works via external proxy). 3) Frontend updates AsyncStorage locally with profile data after save. 4) Profile Setup form fully functional: shows on first login, includes First Name, Last Name, Position dropdown (Operations Manager, Senior Technician, Junior Technician), Supervisor dropdown (Alonzo Cotton, Ramon Reyes, Mizael Contreras, Anthony Reddix), Phone, Profile Photo upload. After completing setup, transitions to normal home screen with correct welcome message. Please retest PUT /api/auth/profile endpoint."
 
@@ -937,10 +1009,7 @@ agent_communication:
     message: "Implemented Report Generation & Salesforce Upload feature. New POST /api/projects/{project_id}/generate-report endpoint that: 1) Fetches all equipment + readings for the project. 2) Calculates per-unit averages (avg differential pressure drop, avg airflow increase). 3) Calculates overall project averages across all units. 4) Generates a professional PDF with Blue Box Air branding (using reportlab). 5) Uploads PDF to Salesforce Opportunity files (ContentVersion + ContentDocumentLink). 6) Returns PDF as base64 for frontend download/share. Frontend updated with 'Generate & Share Report' button in project detail page that triggers report generation, shows SF upload status, displays calculated averages inline, and opens native share sheet (via expo-sharing) for Gmail sharing. PDF includes: company branding, client name, technician name+email, date completed, per-unit averages table, overall averages table, and detailed equipment readings. Verified PDF generation with test data: AHU-01 DP Drop=1.3 inWC, Airflow Increase=230 FPM; RTU-02 DP Drop=1.5 inWC, Airflow Increase=250 FPM; Overall DP Drop=1.4 inWC, Airflow Increase=240 FPM. Please test the new endpoint."
 
 test_plan:
-  current_focus:
-    - "Report Generation Feature Testing"
-    - "Mobile UI Responsiveness"
-    - "Login Flow Verification"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -994,4 +1063,6 @@ agent_communication:
     message: "✅ MOCK_DATA REMOVAL MIGRATION TESTING COMPLETE: All 10 critical endpoints tested successfully with 100% pass rate. The backend has been successfully migrated from hardcoded MOCK_DATA to live MongoDB database queries. Key findings: 1) POST /api/auth/login with test credentials works correctly (Salesforce falls through to DB profile lookup). 2) GET /api/dashboard/stats returns proper stats from DB aggregation queries (total_projects=3, active=3, total_equipment=68, units_serviced=1, total_readings=9). 3) GET /api/projects returns 3 projects from custom_projects DB with complete structure. 4) GET /api/projects/kanban returns kanban object with projects categorized from sf_projects + custom_projects. 5) GET /api/auth/profile returns profile from DB (Alonzo Cotton). 6) PUT /api/auth/profile successfully updates profile in DB. 7) GET /api/coil-of-month returns 2 entries from coil_of_month collection. 8) GET /api/coil-of-month/current returns current entry object. 9) GET /api/salesforce/projects returns empty array (no SF sync yet). 10) GET /api/notifications returns empty notifications array. All response structures validated - no 500 Internal Server Errors indicating successful removal of all MOCK_DATA references. MINOR ISSUE: External proxy routing issue with coil-of-month endpoints (work on localhost, 404 on external URL) - infrastructure issue, not related to migration. Migration successful - backend now fully database-driven."
   - agent: "testing"
     message: "✅ REPORT GENERATION & UPLOAD API TESTING COMPLETE: All 5 requested tests passed with 100% success rate. Key findings: 1) POST /api/projects/69d42c46ed575b4fa15b3265/generate-report with technician Jim Metropoulos successfully returns success=true, valid PDF base64 (3554 bytes), filename containing 'BBA_Report', and correct calculations. 2) Equipment 1 (AHU-01): DP Drop=1.3 inWC, Airflow Increase=230.0 FPM. 3) Equipment 2 (RTU-02): DP Drop=1.5 inWC, Airflow Increase=250.0 FPM. 4) Overall averages: DP Drop=1.4 inWC, Airflow Increase=240.0 FPM - all calculations match expected values exactly. 5) POST /api/projects/nonexistent/generate-report correctly returns 404 for missing project. 6) POST /api/auth/login regression test passed with demo@blueboxair.com credentials. 7) GET /api/projects regression test passed returning 6 projects in correct structure. 8) PDF content validation passed - decoded base64 produces valid PDF with %PDF header and non-zero size. Report generation endpoint working perfectly with accurate calculations and proper PDF generation."
+  - agent: "testing"
+    message: "✅ GOOGLE AUTH & FACE ID REVIEW REQUEST TESTING COMPLETE: All 7 requested endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/auth/google/session with missing session_id correctly returns 400 'session_id is required'. 2) POST /api/auth/google/session with invalid session_id correctly returns 401 'Google authentication failed. Please try again.' 3) POST /api/auth/google/session endpoint exists and handles requests properly (returns 401, not 404/500). 4) POST /api/auth/login with demo credentials (demo@blueboxair.com / BBAReview2025!) successfully returns success=true, technician.full_name='Demo Reviewer', and valid JWT token. 5) GET /api/auth/salesforce/init returns 200 with auth_url containing 'login.salesforce.com' - no regressions. 6) GET /api/support returns 200 with HTML content containing 'BBA Tech Support' - previous 500 error resolved. 7) GET /api/privacy-policy returns 200 with HTML content - working correctly. Face ID authentication confirmed to be handled entirely by device's secure enclave (no backend API required). All Google Auth endpoints working correctly with proper validation and error handling. Demo account functional for App Store review process."
 

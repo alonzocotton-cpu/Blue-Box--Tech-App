@@ -64,6 +64,7 @@ export default function LoginScreen() {
   const [autoLoginChecked, setAutoLoginChecked] = useState(false);
   const [showSplashVideo, setShowSplashVideo] = useState(false);
   const [showCredentialForm, setShowCredentialForm] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const videoRef = useRef<any>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const textFadeAnim = useRef(new Animated.Value(0)).current;
@@ -73,11 +74,60 @@ export default function LoginScreen() {
   }, []);
 
   const initializeLogin = async () => {
+    // Check if we're returning from Google OAuth (Emergent Auth) callback
+    await checkGoogleCallback();
     // Check if we're returning from Salesforce OAuth callback
     await checkSalesforceCallback();
     await checkBiometricSupport();
     await loadSavedCredentials();
     setAutoLoginChecked(true);
+  };
+
+  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+  const checkGoogleCallback = async () => {
+    try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const hash = window.location.hash;
+        if (hash && hash.includes('session_id=')) {
+          // Extract session_id from URL fragment
+          const sessionId = hash.split('session_id=')[1]?.split('&')[0];
+          if (sessionId) {
+            setGoogleLoading(true);
+            // Clean the URL immediately
+            window.history.replaceState({}, '', window.location.pathname);
+
+            // Send session_id to backend for verification and SF sync
+            const response = await fetch(`${API_URL}/api/auth/google/session`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ session_id: sessionId }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+              await AsyncStorage.setItem('authToken', data.token);
+              await AsyncStorage.setItem('technician', JSON.stringify(data.technician));
+              await AsyncStorage.setItem('loginSource', data.source || 'google');
+
+              // Enable biometric for next time
+              if (biometricAvailable) {
+                await AsyncStorage.setItem('biometricEnabled', 'true');
+              }
+
+              await navigateAfterAuth();
+              return;
+            } else {
+              Alert.alert('Google Login', data.detail || data.message || 'Authentication failed. Please try again.');
+            }
+            setGoogleLoading(false);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Google callback error:', error);
+      setGoogleLoading(false);
+    }
   };
 
   const checkSalesforceCallback = async () => {
@@ -238,6 +288,25 @@ export default function LoginScreen() {
   };
 
   const handleBiometricLogin = async () => {
+    // Check if biometrics are available on this device
+    if (!biometricAvailable) {
+      Alert.alert(
+        'Face ID / Biometric',
+        'Biometric authentication is available on your mobile device. Please login with your credentials or Google first, then Face ID will be enabled for future logins.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    if (!hasSavedCredentials) {
+      Alert.alert(
+        'Face ID Setup',
+        'Please login with your credentials, Google, or Salesforce first. Face ID will be automatically enabled for your next login.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     try {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Login to Blue Box Air',
@@ -254,13 +323,12 @@ export default function LoginScreen() {
         if (savedToken && savedTechnician) {
           await navigateAfterAuth();
         } else {
-          // No saved session, do regular login
-          Alert.alert('Info', 'Please login with your credentials first');
+          Alert.alert('Session Expired', 'Your saved session has expired. Please login again.');
         }
       }
     } catch (error) {
       console.error('Biometric auth error:', error);
-      Alert.alert('Error', 'Biometric authentication failed');
+      Alert.alert('Biometric Error', 'Authentication failed. Please try again or use another login method.');
     }
   };
 
@@ -303,13 +371,25 @@ export default function LoginScreen() {
     }
   };
 
+  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
   const handleGoogleLogin = async () => {
-    // Google OAuth not configured - inform user to use Salesforce login
-    Alert.alert(
-      'Google Login', 
-      'Google login is not available. Please use "Login with Salesforce" for authentication.',
-      [{ text: 'OK' }]
-    );
+    setGoogleLoading(true);
+    try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        // On web: redirect to Emergent Auth with current origin as redirect
+        const redirectUrl = window.location.origin;
+        window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+      } else {
+        // On native: open Emergent Auth in browser
+        // The redirect will come back via deep linking
+        const redirectUrl = 'bbatech://login';
+        await Linking.openURL(`https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`);
+      }
+    } catch (error) {
+      console.error('Google Login error:', error);
+      Alert.alert('Google Login', 'Unable to open Google sign-in. Please try again or use credentials.');
+      setGoogleLoading(false);
+    }
   };
 
   const triggerSalesforceSync = async (token: string) => {
@@ -385,6 +465,22 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
+
+  // Show loading overlay during Google OAuth callback processing
+  if (googleLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <BlueBoxLogo size={90} />
+        <ActivityIndicator size="large" color={COLORS.lime} style={{ marginTop: 24 }} />
+        <Text style={{ color: COLORS.lime, fontSize: 16, fontWeight: '600', marginTop: 16 }}>
+          Signing in with Google...
+        </Text>
+        <Text style={{ color: COLORS.gray, fontSize: 12, marginTop: 8 }}>
+          Syncing with Salesforce
+        </Text>
+      </SafeAreaView>
+    );
+  }
 
   // Show splash video after login
   if (showSplashVideo) {
@@ -555,11 +651,28 @@ export default function LoginScreen() {
 
             {/* Alternative Login Options */}
             <View style={styles.alternativeLogins}>
-              {/* Face ID / Touch ID */}
-              {biometricAvailable && (
+              {/* Google Login */}
+              <TouchableOpacity 
+                style={styles.socialButton}
+                onPress={handleGoogleLogin}
+                disabled={googleLoading}
+              >
+                {googleLoading ? (
+                  <ActivityIndicator size="small" color={COLORS.google} />
+                ) : (
+                  <Ionicons name="logo-google" size={22} color={COLORS.google} />
+                )}
+                <Text style={styles.socialButtonText}>
+                  {googleLoading ? 'Signing in...' : 'Google'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Face ID / Touch ID - always show on supported platforms */}
+              {(biometricAvailable || Platform.OS === 'ios' || Platform.OS === 'android') && (
                 <TouchableOpacity 
-                  style={styles.socialButton}
+                  style={[styles.socialButton, !hasSavedCredentials && { opacity: 0.5 }]}
                   onPress={handleBiometricLogin}
+                  disabled={!hasSavedCredentials && !biometricAvailable}
                 >
                   <Ionicons 
                     name={Platform.OS === 'ios' ? "scan-outline" : "finger-print-outline"} 

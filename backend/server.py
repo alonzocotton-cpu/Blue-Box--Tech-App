@@ -966,6 +966,168 @@ async def login(credentials: TechnicianLogin):
         detail="Invalid Salesforce credentials. Please use your Salesforce username and password to log in."
     )
 
+
+# ============ GOOGLE AUTH (via Emergent Auth) → SALESFORCE SYNC ============
+
+@api_router.post("/auth/google/session")
+async def google_auth_session(data: dict = Body(...)):
+    """
+    Process Google OAuth session from Emergent Auth.
+    Gets user email from Google, matches to Salesforce profile, creates session.
+    """
+    session_id = data.get("session_id", "")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    # Step 1: Exchange session_id with Emergent Auth for user data
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client_http:
+            auth_resp = await client_http.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_id},
+            )
+            if auth_resp.status_code != 200:
+                logging.error(f"Emergent Auth session-data failed: {auth_resp.status_code} {auth_resp.text}")
+                raise HTTPException(status_code=401, detail="Google authentication failed. Please try again.")
+
+            google_user = auth_resp.json()
+            google_email = google_user.get("email", "").strip().lower()
+            google_name = google_user.get("name", "")
+            google_picture = google_user.get("picture", "")
+            emergent_session_token = google_user.get("session_token", "")
+
+            if not google_email:
+                raise HTTPException(status_code=401, detail="No email received from Google.")
+
+            logging.info(f"Google Auth: {google_email} ({google_name})")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Emergent Auth error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to verify Google authentication.")
+
+    # Step 2: Match Google email to a Salesforce profile in our DB
+    sf_profile = await db.profiles.find_one({
+        "$or": [
+            {"email": {"$regex": f"^{google_email}$", "$options": "i"}},
+            {"username": {"$regex": f"^{google_email}$", "$options": "i"}},
+        ],
+        "source": "salesforce",
+        "is_active": True,
+    })
+
+    # Step 3: If no local SF profile found, try to trigger a Salesforce sync
+    if not sf_profile:
+        # Check if we have any SF session to sync users
+        session = await db.sf_sessions.find_one({}, sort=[("updated_at", -1)])
+        if session and session.get("access_token"):
+            try:
+                logging.info(f"Google Auth: No local profile for {google_email}, attempting SF sync...")
+                sync_result = await sync_all_salesforce_users(token=session["access_token"])
+                if sync_result.get("success"):
+                    # Retry the profile lookup after sync
+                    sf_profile = await db.profiles.find_one({
+                        "$or": [
+                            {"email": {"$regex": f"^{google_email}$", "$options": "i"}},
+                            {"username": {"$regex": f"^{google_email}$", "$options": "i"}},
+                        ],
+                        "source": "salesforce",
+                        "is_active": True,
+                    })
+            except Exception as sync_err:
+                logging.warning(f"SF sync during Google auth failed: {sync_err}")
+
+    # Step 4: Build the technician object
+    if sf_profile:
+        # Found in Salesforce - use their full SF profile
+        technician = {
+            "id": str(sf_profile.get("_id", "")),
+            "salesforce_id": sf_profile.get("salesforce_id", ""),
+            "username": sf_profile.get("username", ""),
+            "email": sf_profile.get("email", google_email),
+            "full_name": sf_profile.get("full_name", google_name),
+            "first_name": sf_profile.get("first_name", ""),
+            "last_name": sf_profile.get("last_name", ""),
+            "phone": sf_profile.get("phone", ""),
+            "title": sf_profile.get("title", ""),
+            "department": sf_profile.get("department", ""),
+            "company": sf_profile.get("company", "") or "Blue Box Air, Inc.",
+            "role": sf_profile.get("role", ""),
+            "sf_profile_name": sf_profile.get("sf_profile_name", ""),
+            "profile_photo": google_picture or sf_profile.get("profile_photo", ""),
+            "skills": ["Coil Management", "Air Quality"],
+            "source": "google_salesforce",
+            "is_admin": await is_admin(sf_profile.get("email", google_email)),
+        }
+
+        # Check profile completion
+        completed = await db.profiles.find_one({"email": technician["email"], "profile_completed": True})
+        technician["profile_completed"] = completed is not None
+
+        logging.info(f"Google Auth: Matched {google_email} to SF profile: {technician['full_name']}")
+    else:
+        # Not found in Salesforce - create a basic profile from Google data
+        name_parts = google_name.split(" ", 1) if google_name else ["User", ""]
+        technician = {
+            "id": f"google-{uuid.uuid4().hex[:8]}",
+            "salesforce_id": "",
+            "username": google_email,
+            "email": google_email,
+            "full_name": google_name or google_email.split("@")[0],
+            "first_name": name_parts[0],
+            "last_name": name_parts[1] if len(name_parts) > 1 else "",
+            "phone": "",
+            "title": "Field Technician",
+            "department": "",
+            "company": "Blue Box Air, Inc.",
+            "role": "Technician",
+            "sf_profile_name": "",
+            "profile_photo": google_picture,
+            "skills": ["Coil Management", "Air Quality"],
+            "source": "google",
+            "is_admin": await is_admin(google_email),
+            "profile_completed": False,
+        }
+
+        # Save the Google-authenticated profile to DB
+        await db.profiles.update_one(
+            {"email": google_email},
+            {"$set": {
+                **technician,
+                "technician_id": technician["id"],
+                "updated_at": datetime.utcnow().isoformat(),
+            }},
+            upsert=True,
+        )
+
+        logging.info(f"Google Auth: New profile created for {google_email} (no SF match)")
+
+    # Step 5: Store the Emergent session
+    auth_token = f"google-{uuid.uuid4()}"
+    await db.google_sessions.update_one(
+        {"email": google_email},
+        {"$set": {
+            "email": google_email,
+            "google_name": google_name,
+            "google_picture": google_picture,
+            "emergent_session_token": emergent_session_token,
+            "auth_token": auth_token,
+            "created_at": datetime.utcnow().isoformat(),
+            "expires_at": (datetime.utcnow() + timedelta(days=7)).isoformat(),
+        }},
+        upsert=True,
+    )
+
+    return {
+        "success": True,
+        "message": f"Welcome, {technician['full_name']}!",
+        "technician": technician,
+        "token": auth_token,
+        "source": technician.get("source", "google"),
+        "salesforce_linked": bool(sf_profile),
+    }
+
 @api_router.get("/auth/salesforce/init")
 async def salesforce_oauth_init(redirect_uri: str = ""):
     """Initialize Salesforce OAuth flow - returns the authorization URL with PKCE"""
