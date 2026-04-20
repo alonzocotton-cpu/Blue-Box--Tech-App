@@ -91,7 +91,12 @@ export default function LoginScreen() {
         const sfError = params.get('sf_error');
         
         if (sfError) {
-          Alert.alert('Salesforce Login Failed', decodeURIComponent(sfError));
+          Alert.alert(
+            'Salesforce Login', 
+            'Salesforce authentication was not completed. Please use the demo credentials to sign in.',
+            [{ text: 'OK' }]
+          );
+          setShowCredentialForm(true);
           // Clean URL
           window.history.replaceState({}, '', window.location.pathname);
           return;
@@ -267,8 +272,13 @@ export default function LoginScreen() {
       const data = await response.json();
       
       if (!data.auth_url) {
-        Alert.alert('Error', 'Salesforce is not configured. Please contact your administrator.');
+        Alert.alert(
+          'Salesforce Login', 
+          'Salesforce SSO is available for Blue Box Air employees. If you are not a company employee, please use the credentials login below.',
+          [{ text: 'OK' }]
+        );
         setSfLoading(false);
+        setShowCredentialForm(true);
         return;
       }
       
@@ -279,17 +289,16 @@ export default function LoginScreen() {
         window.location.href = authUrl;
       } else {
         // On native, open Salesforce login in the browser
-        const supported = await Linking.canOpenURL(authUrl);
-        if (supported) {
-          await Linking.openURL(authUrl);
-        } else {
-          // Fallback: try opening anyway
-          await Linking.openURL(authUrl);
-        }
+        await Linking.openURL(authUrl);
       }
     } catch (error) {
       console.error('Salesforce OAuth error:', error);
-      Alert.alert('Error', 'Unable to initiate Salesforce login. Please check your connection.');
+      Alert.alert(
+        'Salesforce Login', 
+        'Unable to reach Salesforce. You can login with your credentials below.',
+        [{ text: 'OK' }]
+      );
+      setShowCredentialForm(true);
       setSfLoading(false);
     }
   };
@@ -456,6 +465,9 @@ export default function LoginScreen() {
                 </>
               )}
             </TouchableOpacity>
+            <Text style={{ color: COLORS.grayDark, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
+              For Blue Box Air employees with Salesforce accounts
+            </Text>
 
             {/* Divider */}
             <View style={styles.divider}>
@@ -543,15 +555,6 @@ export default function LoginScreen() {
 
             {/* Alternative Login Options */}
             <View style={styles.alternativeLogins}>
-              {/* Google Login */}
-              <TouchableOpacity 
-                style={styles.socialButton}
-                onPress={handleGoogleLogin}
-              >
-                <Ionicons name="logo-google" size={22} color={COLORS.google} />
-                <Text style={styles.socialButtonText}>Google</Text>
-              </TouchableOpacity>
-
               {/* Face ID / Touch ID */}
               {biometricAvailable && (
                 <TouchableOpacity 

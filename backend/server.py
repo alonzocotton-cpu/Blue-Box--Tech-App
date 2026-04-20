@@ -406,6 +406,7 @@ async def terms_of_service():
 @api_router.get("/support")
 async def support_page():
     """Public support page for App Store compliance"""
+    from fastapi.responses import HTMLResponse
     html = '''<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>BBA Tech Support</title>
 <style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:0;background:#0f2744;color:#e2e8f0;}
 .container{max-width:700px;margin:0 auto;padding:24px 20px;}
