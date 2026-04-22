@@ -163,7 +163,7 @@ function showTab(id) {{
 # === End Screenshot Endpoints ===
 
 # === Privacy Policy & Terms ===
-@api_router.get("/privacy-policy")
+@api_router.api_route("/privacy-policy", methods=["GET", "HEAD"])
 async def privacy_policy():
     """Public privacy policy page for App Store compliance"""
     from fastapi.responses import HTMLResponse
@@ -300,7 +300,7 @@ async def privacy_policy():
 </body></html>'''
     return HTMLResponse(content=html)
 
-@api_router.get("/terms")
+@api_router.api_route("/terms", methods=["GET", "HEAD"])
 async def terms_of_service():
     """Public terms of service page"""
     from fastapi.responses import HTMLResponse
@@ -403,7 +403,7 @@ async def terms_of_service():
 </body></html>'''
     return HTMLResponse(content=html)
 
-@api_router.get("/support")
+@api_router.api_route("/support", methods=["GET", "HEAD"])
 async def support_page():
     """Public support page for App Store compliance"""
     from fastapi.responses import HTMLResponse
@@ -960,10 +960,46 @@ async def login(credentials: TechnicianLogin):
             "source": "demo",
         }
     
+    # ─── Registered User Login ───
+    password_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
+    reg_user = await db.registered_users.find_one({
+        "email": login_name.lower(),
+        "password_hash": password_hash,
+        "is_active": True,
+    })
+    if reg_user:
+        technician = {
+            "id": reg_user.get("user_id", str(reg_user.get("_id", ""))),
+            "salesforce_id": "",
+            "username": reg_user.get("email", ""),
+            "email": reg_user.get("email", ""),
+            "full_name": reg_user.get("full_name", ""),
+            "first_name": reg_user.get("first_name", ""),
+            "last_name": reg_user.get("last_name", ""),
+            "phone": reg_user.get("phone", ""),
+            "title": reg_user.get("title", "Field Technician"),
+            "department": reg_user.get("department", ""),
+            "company": reg_user.get("company", "Blue Box Air, Inc."),
+            "role": reg_user.get("role", "Technician"),
+            "sf_profile_name": "",
+            "profile_photo": reg_user.get("profile_photo", ""),
+            "skills": reg_user.get("skills", ["Coil Management", "Air Quality"]),
+            "source": "registered",
+            "is_admin": reg_user.get("is_admin", False),
+            "profile_completed": reg_user.get("profile_completed", False),
+        }
+        return {
+            "success": True,
+            "message": f"Welcome back, {technician['first_name']}!",
+            "technician": technician,
+            "token": f"reg-{uuid.uuid4()}",
+            "source": "registered",
+        }
+
     # Final fallback: No valid login found
     raise HTTPException(
         status_code=401,
-        detail="Invalid Salesforce credentials. Please use your Salesforce username and password to log in."
+        detail="Invalid credentials. Please check your email and password, or create a new account."
     )
 
 
@@ -1126,6 +1162,103 @@ async def google_auth_session(data: dict = Body(...)):
         "token": auth_token,
         "source": technician.get("source", "google"),
         "salesforce_linked": bool(sf_profile),
+    }
+
+
+# ============ USER REGISTRATION ============
+
+@api_router.post("/auth/register")
+async def register_user(data: dict = Body(...)):
+    """Register a new user account within the app."""
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password", "")
+    full_name = (data.get("full_name") or "").strip()
+    phone = (data.get("phone") or "").strip()
+
+    # Validation
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email address is required.")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    if not full_name:
+        raise HTTPException(status_code=400, detail="Full name is required.")
+
+    # Check if email already exists
+    existing = await db.registered_users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=409, detail="An account with this email already exists. Please sign in.")
+
+    # Hash the password
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    # Create the user
+    name_parts = full_name.split(" ", 1)
+    user_id = f"reg-{uuid.uuid4().hex[:12]}"
+    user_doc = {
+        "user_id": user_id,
+        "email": email,
+        "password_hash": password_hash,
+        "full_name": full_name,
+        "first_name": name_parts[0],
+        "last_name": name_parts[1] if len(name_parts) > 1 else "",
+        "phone": phone,
+        "title": "Field Technician",
+        "department": "",
+        "company": "Blue Box Air, Inc.",
+        "role": "Technician",
+        "profile_photo": "",
+        "skills": ["Coil Management", "Air Quality"],
+        "source": "registered",
+        "is_active": True,
+        "is_admin": False,
+        "profile_completed": False,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    await db.registered_users.insert_one(user_doc)
+
+    # Also create a profile entry
+    await db.profiles.update_one(
+        {"email": email},
+        {"$set": {
+            **user_doc,
+            "technician_id": user_id,
+            "updated_at": datetime.utcnow().isoformat(),
+        }},
+        upsert=True,
+    )
+
+    # Generate auth token
+    auth_token = f"reg-{uuid.uuid4()}"
+
+    technician = {
+        "id": user_id,
+        "salesforce_id": "",
+        "username": email,
+        "email": email,
+        "full_name": full_name,
+        "first_name": name_parts[0],
+        "last_name": name_parts[1] if len(name_parts) > 1 else "",
+        "phone": phone,
+        "title": "Field Technician",
+        "department": "",
+        "company": "Blue Box Air, Inc.",
+        "role": "Technician",
+        "sf_profile_name": "",
+        "profile_photo": "",
+        "skills": ["Coil Management", "Air Quality"],
+        "source": "registered",
+        "is_admin": False,
+        "profile_completed": False,
+    }
+
+    logging.info(f"New user registered: {email} ({full_name})")
+
+    return {
+        "success": True,
+        "message": f"Welcome to BBA Tech, {name_parts[0]}!",
+        "technician": technician,
+        "token": auth_token,
+        "source": "registered",
     }
 
 @api_router.get("/auth/salesforce/init")

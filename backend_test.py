@@ -1,157 +1,398 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for BBA Tech - Google Auth and Face ID Endpoints
-Testing the specific endpoints mentioned in the review request.
+BBA Tech Backend Testing for Apple App Store Review Requirements
+Tests all critical endpoints for App Store compliance and user registration/login flows.
 """
 
-import requests
+import asyncio
+import httpx
 import json
 import sys
-from typing import Dict, Any
+from datetime import datetime
 
 # Backend URL from environment
 BACKEND_URL = "https://techservice-app-2.preview.emergentagent.com/api"
 
-def test_endpoint(method: str, endpoint: str, data: Dict[Any, Any] = None, expected_status: int = 200, description: str = "") -> bool:
-    """Test a single endpoint and return success status"""
-    url = f"{BACKEND_URL}{endpoint}"
-    
-    try:
-        if method.upper() == "GET":
-            response = requests.get(url, timeout=30)
-        elif method.upper() == "POST":
-            response = requests.post(url, json=data, timeout=30)
-        else:
-            print(f"❌ UNSUPPORTED METHOD: {method}")
-            return False
-            
-        print(f"\n{'='*60}")
-        print(f"TEST: {description}")
-        print(f"URL: {url}")
-        print(f"Method: {method}")
-        if data:
-            print(f"Body: {json.dumps(data, indent=2)}")
-        print(f"Expected Status: {expected_status}")
-        print(f"Actual Status: {response.status_code}")
+class BBABackendTester:
+    def __init__(self):
+        self.client = httpx.AsyncClient(timeout=30.0)
+        self.results = []
+        self.failed_tests = []
         
+    async def close(self):
+        await self.client.aclose()
+    
+    def log_result(self, test_name, success, status_code, details="", expected_status=200):
+        result = {
+            "test": test_name,
+            "success": success,
+            "status_code": status_code,
+            "expected_status": expected_status,
+            "details": details,
+            "timestamp": datetime.now().isoformat()
+        }
+        self.results.append(result)
+        
+        status_icon = "✅" if success else "❌"
+        print(f"{status_icon} {test_name}: {status_code} - {details}")
+        
+        if not success:
+            self.failed_tests.append(test_name)
+    
+    async def test_head_support(self):
+        """Test 1: HEAD /api/support - Apple checks support URL availability via HEAD"""
         try:
-            response_json = response.json()
-            print(f"Response: {json.dumps(response_json, indent=2)}")
-        except:
-            print(f"Response (text): {response.text[:500]}...")
+            response = await self.client.head(f"{BACKEND_URL}/support")
+            success = response.status_code == 200
+            self.log_result(
+                "HEAD /api/support", 
+                success, 
+                response.status_code,
+                "Support URL HEAD check for Apple App Store compliance",
+                200
+            )
+        except Exception as e:
+            self.log_result("HEAD /api/support", False, 0, f"Exception: {str(e)}")
+    
+    async def test_get_support(self):
+        """Test 2: GET /api/support - Full page load"""
+        try:
+            response = await self.client.get(f"{BACKEND_URL}/support")
+            success = response.status_code == 200 and "BBA Tech Support" in response.text
+            details = f"Status: {response.status_code}, Contains 'BBA Tech Support': {'BBA Tech Support' in response.text}"
+            self.log_result(
+                "GET /api/support", 
+                success, 
+                response.status_code,
+                details,
+                200
+            )
+        except Exception as e:
+            self.log_result("GET /api/support", False, 0, f"Exception: {str(e)}")
+    
+    async def test_head_privacy_policy(self):
+        """Test 3: HEAD /api/privacy-policy"""
+        try:
+            response = await self.client.head(f"{BACKEND_URL}/privacy-policy")
+            success = response.status_code == 200
+            self.log_result(
+                "HEAD /api/privacy-policy", 
+                success, 
+                response.status_code,
+                "Privacy policy HEAD check",
+                200
+            )
+        except Exception as e:
+            self.log_result("HEAD /api/privacy-policy", False, 0, f"Exception: {str(e)}")
+    
+    async def test_head_terms(self):
+        """Test 4: HEAD /api/terms"""
+        try:
+            response = await self.client.head(f"{BACKEND_URL}/terms")
+            success = response.status_code == 200
+            self.log_result(
+                "HEAD /api/terms", 
+                success, 
+                response.status_code,
+                "Terms of service HEAD check",
+                200
+            )
+        except Exception as e:
+            self.log_result("HEAD /api/terms", False, 0, f"Exception: {str(e)}")
+    
+    async def test_register_new_user(self):
+        """Test 5: POST /api/auth/register - New user registration"""
+        try:
+            test_data = {
+                "full_name": "Test User",
+                "email": "testuser123@example.com",
+                "password": "TestPass123",
+                "phone": "555-1234"
+            }
             
-        if response.status_code == expected_status:
-            print(f"✅ PASS: Status code matches expected {expected_status}")
-            return True
-        else:
-            print(f"❌ FAIL: Expected {expected_status}, got {response.status_code}")
-            return False
+            response = await self.client.post(
+                f"{BACKEND_URL}/auth/register",
+                json=test_data
+            )
             
-    except Exception as e:
-        print(f"\n{'='*60}")
-        print(f"TEST: {description}")
-        print(f"❌ ERROR: {str(e)}")
-        return False
+            success = False
+            details = f"Status: {response.status_code}"
+            
+            if response.status_code == 200:
+                data = response.json()
+                success = (
+                    data.get("success") == True and
+                    data.get("technician", {}).get("full_name") == "Test User" and
+                    data.get("technician", {}).get("email") == "testuser123@example.com" and
+                    data.get("source") == "registered"
+                )
+                details += f", success: {data.get('success')}, technician.full_name: {data.get('technician', {}).get('full_name')}, source: {data.get('source')}"
+            else:
+                details += f", Response: {response.text[:200]}"
+            
+            self.log_result(
+                "POST /api/auth/register (new user)", 
+                success, 
+                response.status_code,
+                details,
+                200
+            )
+            
+        except Exception as e:
+            self.log_result("POST /api/auth/register (new user)", False, 0, f"Exception: {str(e)}")
+    
+    async def test_register_duplicate_email(self):
+        """Test 6: POST /api/auth/register - Duplicate email rejection"""
+        try:
+            test_data = {
+                "full_name": "Dupe User",
+                "email": "testuser123@example.com",
+                "password": "TestPass123"
+            }
+            
+            response = await self.client.post(
+                f"{BACKEND_URL}/auth/register",
+                json=test_data
+            )
+            
+            success = response.status_code == 409 and "already exists" in response.text
+            details = f"Status: {response.status_code}, Contains 'already exists': {'already exists' in response.text}"
+            
+            self.log_result(
+                "POST /api/auth/register (duplicate email)", 
+                success, 
+                response.status_code,
+                details,
+                409
+            )
+            
+        except Exception as e:
+            self.log_result("POST /api/auth/register (duplicate email)", False, 0, f"Exception: {str(e)}")
+    
+    async def test_register_missing_name(self):
+        """Test 7: POST /api/auth/register - Validation: missing name"""
+        try:
+            test_data = {
+                "full_name": "",
+                "email": "a@b.com",
+                "password": "Test123"
+            }
+            
+            response = await self.client.post(
+                f"{BACKEND_URL}/auth/register",
+                json=test_data
+            )
+            
+            success = response.status_code == 400
+            details = f"Status: {response.status_code}, Response: {response.text[:100]}"
+            
+            self.log_result(
+                "POST /api/auth/register (missing name)", 
+                success, 
+                response.status_code,
+                details,
+                400
+            )
+            
+        except Exception as e:
+            self.log_result("POST /api/auth/register (missing name)", False, 0, f"Exception: {str(e)}")
+    
+    async def test_register_short_password(self):
+        """Test 8: POST /api/auth/register - Validation: short password"""
+        try:
+            test_data = {
+                "full_name": "Test",
+                "email": "a@b.com",
+                "password": "12"
+            }
+            
+            response = await self.client.post(
+                f"{BACKEND_URL}/auth/register",
+                json=test_data
+            )
+            
+            success = response.status_code == 400
+            details = f"Status: {response.status_code}, Response: {response.text[:100]}"
+            
+            self.log_result(
+                "POST /api/auth/register (short password)", 
+                success, 
+                response.status_code,
+                details,
+                400
+            )
+            
+        except Exception as e:
+            self.log_result("POST /api/auth/register (short password)", False, 0, f"Exception: {str(e)}")
+    
+    async def test_login_registered_user(self):
+        """Test 9: POST /api/auth/login - Login with registered account"""
+        try:
+            test_data = {
+                "username": "testuser123@example.com",
+                "password": "TestPass123"
+            }
+            
+            response = await self.client.post(
+                f"{BACKEND_URL}/auth/login",
+                json=test_data
+            )
+            
+            success = False
+            details = f"Status: {response.status_code}"
+            
+            if response.status_code == 200:
+                data = response.json()
+                success = (
+                    data.get("success") == True and
+                    data.get("technician", {}).get("full_name") == "Test User" and
+                    data.get("source") == "registered"
+                )
+                details += f", success: {data.get('success')}, technician.full_name: {data.get('technician', {}).get('full_name')}, source: {data.get('source')}"
+            else:
+                details += f", Response: {response.text[:200]}"
+            
+            self.log_result(
+                "POST /api/auth/login (registered user)", 
+                success, 
+                response.status_code,
+                details,
+                200
+            )
+            
+        except Exception as e:
+            self.log_result("POST /api/auth/login (registered user)", False, 0, f"Exception: {str(e)}")
+    
+    async def test_login_demo_account(self):
+        """Test 10: POST /api/auth/login - Demo account still works"""
+        try:
+            test_data = {
+                "username": "demo@blueboxair.com",
+                "password": "BBAReview2025!"
+            }
+            
+            response = await self.client.post(
+                f"{BACKEND_URL}/auth/login",
+                json=test_data
+            )
+            
+            success = False
+            details = f"Status: {response.status_code}"
+            
+            if response.status_code == 200:
+                data = response.json()
+                success = (
+                    data.get("success") == True and
+                    data.get("technician", {}).get("full_name") == "Demo Reviewer"
+                )
+                details += f", success: {data.get('success')}, technician.full_name: {data.get('technician', {}).get('full_name')}"
+            else:
+                details += f", Response: {response.text[:200]}"
+            
+            self.log_result(
+                "POST /api/auth/login (demo account)", 
+                success, 
+                response.status_code,
+                details,
+                200
+            )
+            
+        except Exception as e:
+            self.log_result("POST /api/auth/login (demo account)", False, 0, f"Exception: {str(e)}")
+    
+    async def test_google_auth_session(self):
+        """Test 11: POST /api/auth/google/session - Google auth endpoint exists"""
+        try:
+            test_data = {
+                "session_id": "invalid"
+            }
+            
+            response = await self.client.post(
+                f"{BACKEND_URL}/auth/google/session",
+                json=test_data
+            )
+            
+            # Expected: 401 (not 404/500) - endpoint exists and handles requests
+            success = response.status_code == 401
+            details = f"Status: {response.status_code}, Response: {response.text[:100]}"
+            
+            self.log_result(
+                "POST /api/auth/google/session (endpoint exists)", 
+                success, 
+                response.status_code,
+                details,
+                401
+            )
+            
+        except Exception as e:
+            self.log_result("POST /api/auth/google/session (endpoint exists)", False, 0, f"Exception: {str(e)}")
+    
+    async def run_all_tests(self):
+        """Run all Apple App Store review tests"""
+        print("🚀 Starting BBA Tech Backend Testing for Apple App Store Review")
+        print(f"📍 Backend URL: {BACKEND_URL}")
+        print("=" * 80)
+        
+        # Run all tests in sequence
+        await self.test_head_support()
+        await self.test_get_support()
+        await self.test_head_privacy_policy()
+        await self.test_head_terms()
+        await self.test_register_new_user()
+        await self.test_register_duplicate_email()
+        await self.test_register_missing_name()
+        await self.test_register_short_password()
+        await self.test_login_registered_user()
+        await self.test_login_demo_account()
+        await self.test_google_auth_session()
+        
+        # Summary
+        print("=" * 80)
+        total_tests = len(self.results)
+        passed_tests = len([r for r in self.results if r["success"]])
+        failed_tests = len(self.failed_tests)
+        
+        print(f"📊 TEST SUMMARY:")
+        print(f"   Total Tests: {total_tests}")
+        print(f"   ✅ Passed: {passed_tests}")
+        print(f"   ❌ Failed: {failed_tests}")
+        print(f"   📈 Success Rate: {(passed_tests/total_tests)*100:.1f}%")
+        
+        if self.failed_tests:
+            print(f"\n❌ FAILED TESTS:")
+            for test in self.failed_tests:
+                print(f"   • {test}")
+        
+        print("\n🎯 Apple App Store Review Requirements Status:")
+        critical_tests = [
+            "HEAD /api/support",
+            "GET /api/support", 
+            "POST /api/auth/register (new user)",
+            "POST /api/auth/login (demo account)"
+        ]
+        
+        critical_passed = 0
+        for test in critical_tests:
+            test_result = next((r for r in self.results if r["test"] == test), None)
+            if test_result and test_result["success"]:
+                critical_passed += 1
+                print(f"   ✅ {test}")
+            else:
+                print(f"   ❌ {test}")
+        
+        print(f"\n🏆 Critical Tests: {critical_passed}/{len(critical_tests)} passed")
+        
+        return passed_tests == total_tests
 
-def main():
-    """Run all the tests specified in the review request"""
-    print("🚀 Starting BBA Tech Backend API Testing")
-    print(f"Backend URL: {BACKEND_URL}")
-    
-    tests_passed = 0
-    tests_total = 0
-    
-    # Test 1: POST /api/auth/google/session - Missing session_id
-    tests_total += 1
-    if test_endpoint(
-        "POST", 
-        "/auth/google/session",
-        {},
-        400,
-        "POST /api/auth/google/session - Missing session_id"
-    ):
-        tests_passed += 1
-    
-    # Test 2: POST /api/auth/google/session - Invalid session_id
-    tests_total += 1
-    if test_endpoint(
-        "POST",
-        "/auth/google/session", 
-        {"session_id": "invalid-test-123"},
-        401,
-        "POST /api/auth/google/session - Invalid session_id"
-    ):
-        tests_passed += 1
-    
-    # Test 3: POST /api/auth/google/session - Valid structure check (should not return 404/500)
-    tests_total += 1
-    response_test = test_endpoint(
-        "POST",
-        "/auth/google/session",
-        {"session_id": "test-structure-check"},
-        401,  # Expecting 401 for invalid session, not 404/500
-        "POST /api/auth/google/session - Valid structure check"
-    )
-    if response_test:
-        tests_passed += 1
-    
-    # Test 4: POST /api/auth/login - Regression: Demo account
-    tests_total += 1
-    if test_endpoint(
-        "POST",
-        "/auth/login",
-        {"username": "demo@blueboxair.com", "password": "BBAReview2025!"},
-        200,
-        "POST /api/auth/login - Demo account regression test"
-    ):
-        tests_passed += 1
-    
-    # Test 5: GET /api/auth/salesforce/init - Regression
-    tests_total += 1
-    if test_endpoint(
-        "GET",
-        "/auth/salesforce/init",
-        None,
-        200,
-        "GET /api/auth/salesforce/init - Regression test"
-    ):
-        tests_passed += 1
-    
-    # Test 6: GET /api/support - Regression (was returning 500 before)
-    tests_total += 1
-    if test_endpoint(
-        "GET",
-        "/support",
-        None,
-        200,
-        "GET /api/support - Regression test"
-    ):
-        tests_passed += 1
-    
-    # Test 7: GET /api/privacy-policy - Regression
-    tests_total += 1
-    if test_endpoint(
-        "GET",
-        "/privacy-policy",
-        None,
-        200,
-        "GET /api/privacy-policy - Regression test"
-    ):
-        tests_passed += 1
-    
-    # Summary
-    print(f"\n{'='*60}")
-    print(f"🏁 TESTING COMPLETE")
-    print(f"Tests Passed: {tests_passed}/{tests_total}")
-    print(f"Success Rate: {(tests_passed/tests_total)*100:.1f}%")
-    
-    if tests_passed == tests_total:
-        print("🎉 ALL TESTS PASSED!")
-        return True
-    else:
-        print("⚠️  SOME TESTS FAILED")
-        return False
+async def main():
+    """Main test runner"""
+    tester = BBABackendTester()
+    try:
+        success = await tester.run_all_tests()
+        return 0 if success else 1
+    finally:
+        await tester.close()
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)

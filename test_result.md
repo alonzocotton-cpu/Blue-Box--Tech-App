@@ -1008,8 +1008,141 @@ agent_communication:
   - agent: "main"
     message: "Implemented Report Generation & Salesforce Upload feature. New POST /api/projects/{project_id}/generate-report endpoint that: 1) Fetches all equipment + readings for the project. 2) Calculates per-unit averages (avg differential pressure drop, avg airflow increase). 3) Calculates overall project averages across all units. 4) Generates a professional PDF with Blue Box Air branding (using reportlab). 5) Uploads PDF to Salesforce Opportunity files (ContentVersion + ContentDocumentLink). 6) Returns PDF as base64 for frontend download/share. Frontend updated with 'Generate & Share Report' button in project detail page that triggers report generation, shows SF upload status, displays calculated averages inline, and opens native share sheet (via expo-sharing) for Gmail sharing. PDF includes: company branding, client name, technician name+email, date completed, per-unit averages table, overall averages table, and detailed equipment readings. Verified PDF generation with test data: AHU-01 DP Drop=1.3 inWC, Airflow Increase=230 FPM; RTU-02 DP Drop=1.5 inWC, Airflow Increase=250 FPM; Overall DP Drop=1.4 inWC, Airflow Increase=240 FPM. Please test the new endpoint."
 
+  - task: "Apple App Store Review - Support URL HEAD Check"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: HEAD /api/support returns 200 OK as required by Apple App Store review process. Apple checks support URL availability via HEAD request and this endpoint now properly supports both GET and HEAD methods."
+
+  - task: "Apple App Store Review - Support Page Content"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/support returns 200 with HTML content containing 'BBA Tech Support' as required. Full support page loads correctly with contact information, FAQs, and app information for App Store compliance."
+
+  - task: "Apple App Store Review - Privacy Policy HEAD Check"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: HEAD /api/privacy-policy returns 200 OK. Privacy policy endpoint supports HEAD requests as required for App Store compliance."
+
+  - task: "Apple App Store Review - Terms HEAD Check"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: HEAD /api/terms returns 200 OK. Terms of service endpoint supports HEAD requests as required for App Store compliance."
+
+  - task: "User Registration API - New User Creation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/register with new user data {'full_name': 'Test User', 'email': 'testuser123@example.com', 'password': 'TestPass123', 'phone': '555-1234'} successfully returns success=true, technician.full_name='Test User', technician.email='testuser123@example.com', source='registered'. New user registration working correctly."
+
+  - task: "User Registration API - Duplicate Email Validation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/register with duplicate email 'testuser123@example.com' correctly returns 409 status with 'already exists' error message. Duplicate email validation working properly."
+
+  - task: "User Registration API - Missing Name Validation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/register with empty full_name correctly returns 400 status with 'Full name is required.' error message. Name validation working correctly."
+
+  - task: "User Registration API - Password Length Validation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/register with short password '12' correctly returns 400 status with 'Password must be at least 6 characters.' error message. Password validation working correctly."
+
+  - task: "User Login API - Registered User Authentication"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/login with registered user credentials {'username': 'testuser123@example.com', 'password': 'TestPass123'} successfully returns success=true, technician.full_name='Test User', source='registered'. Registered user login working correctly."
+
+  - task: "Demo Account Login API - Apple Review Account"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/login with demo credentials {'username': 'demo@blueboxair.com', 'password': 'BBAReview2025!'} successfully returns success=true, technician.full_name='Demo Reviewer'. Demo account for Apple App Store review process working correctly."
+
+  - task: "Google Auth Session API - Endpoint Availability"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: POST /api/auth/google/session with invalid session_id correctly returns 401 status (not 404/500), confirming endpoint exists and handles requests properly. Google auth endpoint available as required."
+
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Apple App Store Review Requirements Complete"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1017,6 +1150,8 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: "CRITICAL FIX: Completed removal of ALL MOCK_DATA references from server.py. The previous agent session was cut off mid-migration, leaving the backend with NameError references to MOCK_DATA. Fixed 17 references across these endpoints: 1) GET /api/projects/kanban - removed mock project loop, now uses only sf_projects + custom_projects. 2) GET /api/auth/profile - replaced MOCK_DATA technician fallback with DB query. 3) PUT /api/auth/profile - replaced MOCK_DATA technician ID with DB-derived ID. 4) POST /api/auth/setup-profile - replaced MOCK_DATA technician ID/email with request params + DB lookup. 5) POST /api/media - replaced MOCK_DATA technician ID with request param. 6) POST /api/projects/{id}/share - replaced MOCK_DATA technician ID with request param. 7) GET /api/equipment/{project_id} - replaced MOCK_DATA equipment list with sf_equipment + equipment DB queries. 8) GET /api/equipment/detail/{equipment_id} - replaced MOCK_DATA equipment lookup with DB queries. 9) GET /api/reports/{project_id} - replaced MOCK_DATA project/equipment lookups with DB queries. 10) GET /api/dashboard/stats - replaced MOCK_DATA project counts with DB aggregate queries. Removed dead code after raise HTTPException. Backend is now running cleanly. Please test all critical endpoints."
+  - agent: "testing"
+    message: "✅ APPLE APP STORE REVIEW TESTING COMPLETE: All 11 requested tests passed with 100% success rate. Key findings: 1) HEAD /api/support returns 200 OK (previously was returning 405) - Apple App Store compliance requirement met. 2) GET /api/support returns 200 with HTML content containing 'BBA Tech Support' - full support page working. 3) HEAD /api/privacy-policy and HEAD /api/terms both return 200 OK - policy pages accessible. 4) POST /api/auth/register successfully creates new user with full_name='Test User', email='testuser123@example.com', source='registered'. 5) Duplicate email registration correctly returns 409 'already exists'. 6) Validation working: missing name returns 400, short password returns 400. 7) POST /api/auth/login with registered user returns success=true, full_name='Test User', source='registered'. 8) Demo account login with 'demo@blueboxair.com'/'BBAReview2025!' returns success=true, full_name='Demo Reviewer' - Apple review account working. 9) POST /api/auth/google/session returns 401 (not 404/500) confirming endpoint exists. All critical Apple App Store review requirements satisfied - support URL HEAD check fixed, user registration/login flows working, demo account functional."
   - agent: "main"
     message: "Fixed date/time picker on web. Replaced @react-native-community/datetimepicker (native-only) with cross-platform solution: HTML native inputs on web, keeps native pickers on iOS/Android. Verified: date input, time input, value entry, and reading submission all working on web preview."
   - agent: "main"

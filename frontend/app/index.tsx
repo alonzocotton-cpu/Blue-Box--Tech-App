@@ -20,6 +20,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
+import * as WebBrowser from 'expo-web-browser';
 import { Video, ResizeMode } from 'expo-av';
 
 import { API_BASE_URL } from '../utils/api';
@@ -54,6 +55,7 @@ const BlueBoxLogo = ({ size = 100 }: { size?: number }) => (
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [sfLoading, setSfLoading] = useState(false);
@@ -64,6 +66,10 @@ export default function LoginScreen() {
   const [autoLoginChecked, setAutoLoginChecked] = useState(false);
   const [showSplashVideo, setShowSplashVideo] = useState(false);
   const [showCredentialForm, setShowCredentialForm] = useState(false);
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [registerName, setRegisterName] = useState('');
+  const [registerPhone, setRegisterPhone] = useState('');
+  const [registerLoading, setRegisterLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const videoRef = useRef<any>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -254,8 +260,9 @@ export default function LoginScreen() {
         setHasSavedCredentials(true);
       }
       
-      // Pre-fill username if Remember Me was checked
+      // Pre-fill email if Remember Me was checked
       if (savedUsername && savedRememberMe === 'true') {
+        setEmail(savedUsername);
         setUsername(savedUsername);
         setRememberMe(true);
       }
@@ -356,8 +363,12 @@ export default function LoginScreen() {
         // On web, navigate directly to Salesforce login
         window.location.href = authUrl;
       } else {
-        // On native, open Salesforce login in the browser
-        await Linking.openURL(authUrl);
+        // On native, use WebBrowser (Safari View Controller / Chrome Custom Tabs)
+        // This keeps users in the app and shows the URL bar for security verification
+        await WebBrowser.openBrowserAsync(authUrl, {
+          showTitle: true,
+          enableBarCollapsing: false,
+        });
       }
     } catch (error) {
       console.error('Salesforce OAuth error:', error);
@@ -380,15 +391,73 @@ export default function LoginScreen() {
         const redirectUrl = window.location.origin;
         window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
       } else {
-        // On native: open Emergent Auth in browser
-        // The redirect will come back via deep linking
+        // On native: use WebBrowser (Safari View Controller / Chrome Custom Tabs)
         const redirectUrl = 'bbatech://login';
-        await Linking.openURL(`https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`);
+        await WebBrowser.openBrowserAsync(
+          `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`,
+          {
+            showTitle: true,
+            enableBarCollapsing: false,
+          }
+        );
       }
     } catch (error) {
       console.error('Google Login error:', error);
       Alert.alert('Google Login', 'Unable to open Google sign-in. Please try again or use credentials.');
       setGoogleLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!registerName.trim()) {
+      Alert.alert('Registration', 'Please enter your full name.');
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      Alert.alert('Registration', 'Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert('Registration', 'Password must be at least 6 characters.');
+      return;
+    }
+
+    setRegisterLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: registerName.trim(),
+          email: email.trim().toLowerCase(),
+          password: password,
+          phone: registerPhone.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        await AsyncStorage.setItem('authToken', data.token);
+        await AsyncStorage.setItem('technician', JSON.stringify(data.technician));
+        await AsyncStorage.setItem('loginSource', 'registered');
+
+        if (biometricAvailable) {
+          await AsyncStorage.setItem('biometricEnabled', 'true');
+        }
+
+        await navigateAfterAuth();
+      } else if (response.status === 409) {
+        Alert.alert('Account Exists', data.detail || 'An account with this email already exists. Please sign in.');
+        setIsRegisterMode(false);
+      } else {
+        Alert.alert('Registration Failed', data.detail || 'Unable to create account. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      Alert.alert('Error', 'Unable to connect. Please check your internet connection.');
+    } finally {
+      setRegisterLoading(false);
     }
   };
 
@@ -408,8 +477,9 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter username and password');
+    const loginEmail = email.trim() || username.trim();
+    if (!loginEmail || !password.trim()) {
+      Alert.alert('Sign In', 'Please enter your email and password.');
       return;
     }
 
@@ -418,7 +488,7 @@ export default function LoginScreen() {
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username: loginEmail, password }),
       });
 
       const data = await response.json();
@@ -426,7 +496,7 @@ export default function LoginScreen() {
       if (data.success) {
         await AsyncStorage.setItem('authToken', data.token);
         await AsyncStorage.setItem('technician', JSON.stringify(data.technician));
-        await AsyncStorage.setItem('loginSource', data.source || 'mock');
+        await AsyncStorage.setItem('loginSource', data.source || 'registered');
         
         // Always enable biometric login for next time
         if (biometricAvailable) {
@@ -435,7 +505,7 @@ export default function LoginScreen() {
         
         // Save credentials if Remember Me is checked
         if (rememberMe) {
-          await AsyncStorage.setItem('savedUsername', username);
+          await AsyncStorage.setItem('savedUsername', loginEmail);
           await AsyncStorage.setItem('rememberMe', 'true');
         } else {
           await AsyncStorage.removeItem('savedUsername');
@@ -572,32 +642,59 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Expandable credential login */}
-            <TouchableOpacity 
-              style={styles.credentialToggle}
-              onPress={() => setShowCredentialForm(!showCredentialForm)}
-            >
-              <Ionicons name="key-outline" size={18} color={COLORS.gray} />
-              <Text style={styles.credentialToggleText}>Login with credentials</Text>
-              <Ionicons 
-                name={showCredentialForm ? "chevron-up" : "chevron-down"} 
-                size={18} 
-                color={COLORS.gray} 
-              />
-            </TouchableOpacity>
+            {/* Sign In / Create Account Toggle */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', marginVertical: 6, gap: 4 }}>
+              <TouchableOpacity
+                style={{
+                  paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20,
+                  backgroundColor: !isRegisterMode ? COLORS.navyLight : 'transparent',
+                  borderWidth: 1, borderColor: !isRegisterMode ? COLORS.lime + '40' : COLORS.grayDark,
+                }}
+                onPress={() => { setIsRegisterMode(false); setShowCredentialForm(true); }}
+              >
+                <Text style={{ color: !isRegisterMode ? COLORS.lime : COLORS.gray, fontWeight: '600', fontSize: 13 }}>Sign In</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20,
+                  backgroundColor: isRegisterMode ? COLORS.navyLight : 'transparent',
+                  borderWidth: 1, borderColor: isRegisterMode ? COLORS.lime + '40' : COLORS.grayDark,
+                }}
+                onPress={() => { setIsRegisterMode(true); setShowCredentialForm(true); }}
+              >
+                <Text style={{ color: isRegisterMode ? COLORS.lime : COLORS.gray, fontWeight: '600', fontSize: 13 }}>Create Account</Text>
+              </TouchableOpacity>
+            </View>
 
+            {/* Credential / Registration Form - always visible when tab selected */}
             {showCredentialForm && (
               <View style={styles.credentialForm}>
+                {/* Registration: Full Name field */}
+                {isRegisterMode && (
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="person-outline" size={22} color={COLORS.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Full Name"
+                      placeholderTextColor={COLORS.grayDark}
+                      value={registerName}
+                      onChangeText={setRegisterName}
+                      autoCapitalize="words"
+                    />
+                  </View>
+                )}
+
                 <View style={styles.inputContainer}>
-                  <Ionicons name="person-outline" size={22} color={COLORS.gray} style={styles.inputIcon} />
+                  <Ionicons name="mail-outline" size={22} color={COLORS.gray} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="Username"
+                    placeholder="Email"
                     placeholderTextColor={COLORS.grayDark}
-                    value={username}
-                    onChangeText={setUsername}
+                    value={email}
+                    onChangeText={setEmail}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    keyboardType="email-address"
                   />
                 </View>
 
@@ -620,31 +717,72 @@ export default function LoginScreen() {
                   </TouchableOpacity>
                 </View>
 
-                {/* Remember Me */}
-                <TouchableOpacity 
-                  style={styles.rememberMeContainer}
-                  onPress={() => setRememberMe(!rememberMe)}
-                >
-                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                    {rememberMe && <Ionicons name="checkmark" size={14} color={COLORS.navy} />}
+                {/* Registration: Phone field */}
+                {isRegisterMode && (
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="call-outline" size={22} color={COLORS.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Phone (optional)"
+                      placeholderTextColor={COLORS.grayDark}
+                      value={registerPhone}
+                      onChangeText={setRegisterPhone}
+                      keyboardType="phone-pad"
+                    />
                   </View>
-                  <Text style={styles.rememberMeText}>Remember me</Text>
-                </TouchableOpacity>
+                )}
 
-                {/* Credential Login Button */}
-                <TouchableOpacity
-                  style={[styles.loginButton, (loading || !username.trim() || !password.trim()) && styles.loginButtonDisabled]}
-                  onPress={handleLogin}
-                  disabled={loading || !username.trim() || !password.trim()}
-                >
-                  {loading ? (
-                    <ActivityIndicator color={COLORS.navy} />
-                  ) : (
-                    <>
-                      <Ionicons name="log-in-outline" size={22} color={COLORS.navy} />
-                      <Text style={styles.loginButtonText}>Login</Text>
-                    </>
-                  )}
+                {/* Remember Me (only for sign in) */}
+                {!isRegisterMode && (
+                  <TouchableOpacity 
+                    style={styles.rememberMeContainer}
+                    onPress={() => setRememberMe(!rememberMe)}
+                  >
+                    <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                      {rememberMe && <Ionicons name="checkmark" size={14} color={COLORS.navy} />}
+                    </View>
+                    <Text style={styles.rememberMeText}>Remember me</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Login or Register Button */}
+                {isRegisterMode ? (
+                  <TouchableOpacity
+                    style={[styles.loginButton, (registerLoading || !registerName.trim() || !email.trim() || password.length < 6) && styles.loginButtonDisabled]}
+                    onPress={handleRegister}
+                    disabled={registerLoading || !registerName.trim() || !email.trim() || password.length < 6}
+                  >
+                    {registerLoading ? (
+                      <ActivityIndicator color={COLORS.navy} />
+                    ) : (
+                      <>
+                        <Ionicons name="person-add-outline" size={22} color={COLORS.navy} />
+                        <Text style={styles.loginButtonText}>Create Account</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.loginButton, (loading || !email.trim() || !password.trim()) && styles.loginButtonDisabled]}
+                    onPress={handleLogin}
+                    disabled={loading || !email.trim() || !password.trim()}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color={COLORS.navy} />
+                    ) : (
+                      <>
+                        <Ionicons name="log-in-outline" size={22} color={COLORS.navy} />
+                        <Text style={styles.loginButtonText}>Sign In</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {/* Toggle link */}
+                <TouchableOpacity onPress={() => setIsRegisterMode(!isRegisterMode)} style={{ marginTop: 10, alignItems: 'center' }}>
+                  <Text style={{ color: COLORS.lime, fontSize: 13 }}>
+                    {isRegisterMode ? 'Already have an account? Sign In' : "Don't have an account? Create one"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
