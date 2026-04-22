@@ -228,7 +228,21 @@ export default function LoginScreen() {
   };
 
   // Helper: navigate after auth - show splash video first, then go to home
+  // Determine the destination after auth: tutorial (first login) or home (returning user)
+  const getPostAuthDestination = async (): Promise<string> => {
+    const tutorialDone = await AsyncStorage.getItem('tutorialCompleted');
+    return tutorialDone === 'true' ? '/(tabs)/home' : '/tutorial';
+  };
+
   const navigateAfterAuth = async () => {
+    const destination = await getPostAuthDestination();
+    
+    // Skip splash video for tutorial — go directly to the walkthrough
+    if (destination === '/tutorial') {
+      router.replace('/tutorial');
+      return;
+    }
+    
     setShowSplashVideo(true);
     // Start fade-in animation for branding overlay
     Animated.sequence([
@@ -253,7 +267,6 @@ export default function LoginScreen() {
 
   const handleVideoError = () => {
     console.log('Video failed to load, skipping splash');
-    // If video fails to load, just navigate after a short delay
     setTimeout(() => {
       setShowSplashVideo(false);
       router.replace('/(tabs)/home');
