@@ -360,7 +360,19 @@ export default function LoginScreen() {
         const response = await fetch(`${API_URL}/api/auth/salesforce/init`);
         const data = await response.json();
         if (data.auth_url) {
-          window.location.href = data.auth_url;
+          // Use window.open to avoid iframe restrictions (Salesforce blocks X-Frame-Options)
+          // Try top-level navigation first, fall back to new window
+          try {
+            if (window.top && window.top !== window.self) {
+              // We're in an iframe - navigate the top frame
+              window.top.location.href = data.auth_url;
+            } else {
+              window.location.href = data.auth_url;
+            }
+          } catch (e) {
+            // Cross-origin iframe restriction - open in new tab
+            window.open(data.auth_url, '_blank');
+          }
         } else {
           Alert.alert('Salesforce Login', 'Salesforce SSO is not available.');
           setSfLoading(false);
