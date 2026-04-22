@@ -106,6 +106,8 @@ export default function TeamScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editRoleName, setEditRoleName] = useState('');
   const [editRegion, setEditRegion] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
   const [showEditRolePicker, setShowEditRolePicker] = useState(false);
   const [showEditRegionPicker, setShowEditRegionPicker] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -255,6 +257,8 @@ export default function TeamScreen() {
   const openEditRole = (member: TeamMember) => {
     if (!isAdmin) return;
     setEditingMember(member);
+    setEditName(member.member_name);
+    setEditEmail(member.email || '');
     setEditRoleName(member.role_name);
     setEditRegion(member.region || '');
     setShowEditModal(true);
@@ -262,6 +266,10 @@ export default function TeamScreen() {
 
   const updateMemberRole = async () => {
     if (!editingMember || !editRoleName) return;
+    if (!editName.trim()) {
+      Alert.alert('Required', 'Name cannot be empty.');
+      return;
+    }
     
     setUpdating(true);
     try {
@@ -274,19 +282,21 @@ export default function TeamScreen() {
           old_region: editingMember.region || '',
           new_role_name: editRoleName,
           new_region: editRegion || null,
+          new_name: editName.trim(),
+          new_email: editEmail.trim(),
         }),
       });
       const data = await response.json();
       if (data.success) {
-        Alert.alert('Updated', `${editingMember.member_name} is now ${editRoleName}`);
+        Alert.alert('Updated', data.message || `${editName} updated successfully`);
         setShowEditModal(false);
         setEditingMember(null);
         loadHierarchy();
       } else {
-        Alert.alert('Error', data.detail || 'Failed to update role');
+        Alert.alert('Error', data.detail || 'Failed to update');
       }
     } catch (error) {
-      Alert.alert('Error', 'Could not update role');
+      Alert.alert('Error', 'Could not update team member');
     } finally {
       setUpdating(false);
     }
@@ -464,7 +474,7 @@ export default function TeamScreen() {
           <Ionicons name="information-circle" size={18} color={COLORS.blue} />
           <Text style={styles.tipText}>
             {isAdmin 
-              ? 'Tap a member to edit role. Long-press to remove.' 
+              ? 'Tap a member to edit their name, email, or role. Long-press to remove.' 
               : 'View only. Only administrators can manage team assignments.'}
           </Text>
         </View>
@@ -671,7 +681,7 @@ export default function TeamScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Edit Role Modal */}
+      {/* Edit Team Member Modal */}
       <Modal visible={showEditModal} animationType="slide" transparent>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -679,7 +689,7 @@ export default function TeamScreen() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Role</Text>
+              <Text style={styles.modalTitle}>Edit Team Member</Text>
               <TouchableOpacity onPress={() => setShowEditModal(false)}>
                 <Ionicons name="close" size={24} color={COLORS.white} />
               </TouchableOpacity>
@@ -690,17 +700,40 @@ export default function TeamScreen() {
                 <View style={[styles.memberCard, { marginLeft: 0, marginBottom: 16 }]}>
                   <View style={[styles.memberAvatar, { backgroundColor: COLORS.lime + '25' }]}>
                     <Text style={[styles.memberInitial, { color: COLORS.lime }]}>
-                      {editingMember.member_name.charAt(0).toUpperCase()}
+                      {(editName || editingMember.member_name).charAt(0).toUpperCase()}
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.memberName}>{editingMember.member_name}</Text>
+                    <Text style={styles.memberName}>{editName || editingMember.member_name}</Text>
                     <Text style={[styles.memberRole, { color: COLORS.grayDark }]}>
                       Current: {editingMember.role_name}{editingMember.region ? ` (${editingMember.region})` : ''}
                     </Text>
                   </View>
                 </View>
               )}
+
+              {/* Name Field */}
+              <Text style={styles.fieldLabel}>Name *</Text>
+              <TextInput
+                style={styles.input}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Full name"
+                placeholderTextColor={COLORS.grayDark}
+                autoCapitalize="words"
+              />
+
+              {/* Email Field */}
+              <Text style={styles.fieldLabel}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={editEmail}
+                onChangeText={setEditEmail}
+                placeholder="email@blueboxair.com"
+                placeholderTextColor={COLORS.grayDark}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
 
               {/* New Role Picker */}
               <Text style={styles.fieldLabel}>New Role *</Text>
@@ -782,7 +815,7 @@ export default function TeamScreen() {
                 ) : (
                   <>
                     <Ionicons name="checkmark" size={20} color={COLORS.navy} />
-                    <Text style={styles.assignButtonText}>Update Role</Text>
+                    <Text style={styles.assignButtonText}>Save Changes</Text>
                   </>
                 )}
               </TouchableOpacity>

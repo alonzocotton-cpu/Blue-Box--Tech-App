@@ -2561,7 +2561,7 @@ async def remove_role_assignment(member_name: str, role_name: str = "", region: 
 
 @api_router.put("/roles/assign/{member_name}")
 async def update_role_assignment(member_name: str, data: dict = Body(...)):
-    """Update a team member's role (admin-only)"""
+    """Update a team member's role, name, and/or email (admin-only)"""
     requester_email = data.get("requester_email", "").strip()
     if not await is_admin(requester_email):
         raise HTTPException(status_code=403, detail="Only administrators can update roles")
@@ -2570,6 +2570,8 @@ async def update_role_assignment(member_name: str, data: dict = Body(...)):
     old_region = data.get("old_region", "").strip() or None
     new_role_name = data.get("new_role_name", "").strip()
     new_region = data.get("new_region", "").strip() or None
+    new_name = data.get("new_name", "").strip()
+    new_email = data.get("new_email", "").strip()
     
     if not new_role_name:
         raise HTTPException(status_code=400, detail="New role name is required")
@@ -2598,11 +2600,20 @@ async def update_role_assignment(member_name: str, data: dict = Body(...)):
         "updated_at": datetime.utcnow().isoformat(),
     }
     
+    # Update name if provided and changed
+    if new_name and new_name != member_name:
+        update_data["member_name"] = new_name
+    
+    # Update email if provided
+    if new_email is not None:
+        update_data["email"] = new_email
+    
     result = await db.team_assignments.update_one(query, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
-    return {"success": True, "message": f"Updated {member_name} to {new_role_name}"}
+    display_name = new_name if new_name and new_name != member_name else member_name
+    return {"success": True, "message": f"Updated {display_name} — {new_role_name}"}
 
 
 
