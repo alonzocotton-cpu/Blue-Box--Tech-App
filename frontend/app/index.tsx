@@ -60,6 +60,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [sfLoading, setSfLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -699,6 +700,22 @@ export default function LoginScreen() {
     }
   };
 
+  // Show loading overlay during Google OAuth callback processing
+  if (googleLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <BlueBoxLogo size={90} />
+        <ActivityIndicator size="large" color={COLORS.lime} style={{ marginTop: 24 }} />
+        <Text style={{ color: COLORS.lime, fontSize: 16, fontWeight: '600', marginTop: 16 }}>
+          Signing in with Google...
+        </Text>
+        <Text style={{ color: COLORS.gray, fontSize: 12, marginTop: 8 }}>
+          Syncing with Salesforce
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
   // Show splash video after login
   if (showSplashVideo) {
     return (
@@ -936,6 +953,22 @@ export default function LoginScreen() {
 
             {/* Alternative Login Options */}
             <View style={styles.alternativeLogins}>
+              {/* Google Login */}
+              <TouchableOpacity 
+                style={styles.socialButton}
+                onPress={handleGoogleLogin}
+                disabled={googleLoading}
+              >
+                {googleLoading ? (
+                  <ActivityIndicator size="small" color={COLORS.google} />
+                ) : (
+                  <Ionicons name="logo-google" size={22} color={COLORS.google} />
+                )}
+                <Text style={styles.socialButtonText}>
+                  {googleLoading ? 'Signing in...' : 'Google'}
+                </Text>
+              </TouchableOpacity>
+
               {/* Face ID / Touch ID - always show on supported platforms */}
               {(biometricAvailable || Platform.OS === 'ios' || Platform.OS === 'android') && (
                 <TouchableOpacity 
