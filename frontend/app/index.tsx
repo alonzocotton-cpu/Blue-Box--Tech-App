@@ -325,7 +325,7 @@ export default function LoginScreen() {
     if (!biometricAvailable) {
       Alert.alert(
         'Face ID / Biometric',
-        'Biometric authentication is available on your mobile device. Please login with your credentials or Google first, then Face ID will be enabled for future logins.',
+        'Biometric authentication is available on your mobile device. Please login with your Salesforce credentials first, then Face ID will be enabled for future logins.',
         [{ text: 'OK' }]
       );
       return;
@@ -334,7 +334,7 @@ export default function LoginScreen() {
     if (!hasSavedCredentials) {
       Alert.alert(
         'Face ID Setup',
-        'Please login with your credentials, Google, or Salesforce first. Face ID will be automatically enabled for your next login.',
+        'Please login with your Salesforce credentials first. Face ID will be automatically enabled for your next login.',
         [{ text: 'OK' }]
       );
       return;
@@ -699,22 +699,6 @@ export default function LoginScreen() {
     }
   };
 
-  // Show loading overlay during Google OAuth callback processing
-  if (googleLoading) {
-    return (
-      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <BlueBoxLogo size={90} />
-        <ActivityIndicator size="large" color={COLORS.lime} style={{ marginTop: 24 }} />
-        <Text style={{ color: COLORS.lime, fontSize: 16, fontWeight: '600', marginTop: 16 }}>
-          Signing in with Google...
-        </Text>
-        <Text style={{ color: COLORS.gray, fontSize: 12, marginTop: 8 }}>
-          Syncing with Salesforce
-        </Text>
-      </SafeAreaView>
-    );
-  }
-
   // Show splash video after login
   if (showSplashVideo) {
     return (
@@ -952,22 +936,6 @@ export default function LoginScreen() {
 
             {/* Alternative Login Options */}
             <View style={styles.alternativeLogins}>
-              {/* Google Login */}
-              <TouchableOpacity 
-                style={styles.socialButton}
-                onPress={handleGoogleLogin}
-                disabled={googleLoading}
-              >
-                {googleLoading ? (
-                  <ActivityIndicator size="small" color={COLORS.google} />
-                ) : (
-                  <Ionicons name="logo-google" size={22} color={COLORS.google} />
-                )}
-                <Text style={styles.socialButtonText}>
-                  {googleLoading ? 'Signing in...' : 'Google'}
-                </Text>
-              </TouchableOpacity>
-
               {/* Face ID / Touch ID - always show on supported platforms */}
               {(biometricAvailable || Platform.OS === 'ios' || Platform.OS === 'android') && (
                 <TouchableOpacity 
