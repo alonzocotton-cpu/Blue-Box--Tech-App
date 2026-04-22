@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
 import { Video, ResizeMode } from 'expo-av';
 
 import { API_BASE_URL } from '../utils/api';
@@ -92,52 +93,62 @@ export default function LoginScreen() {
   // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
   const checkGoogleCallback = async () => {
     try {
+      // On web, check URL hash for session_id from Emergent Auth redirect
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         const hash = window.location.hash;
         if (hash && hash.includes('session_id=')) {
-          // Extract session_id from URL fragment
           const sessionId = hash.split('session_id=')[1]?.split('&')[0];
           if (sessionId) {
             setGoogleLoading(true);
-            // Clean the URL immediately
             window.history.replaceState({}, '', window.location.pathname);
-
-            // Send session_id to backend for verification and SF sync
-            const response = await fetch(`${API_URL}/api/auth/google/session`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ session_id: sessionId }),
-            });
-
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-              await AsyncStorage.setItem('authToken', data.token);
-              await AsyncStorage.setItem('technician', JSON.stringify(data.technician));
-              await AsyncStorage.setItem('loginSource', data.source || 'google');
-
-              // Enable biometric for next time
-              if (biometricAvailable) {
-                await AsyncStorage.setItem('biometricEnabled', 'true');
-              }
-
-              await navigateAfterAuth();
-              return;
-            } else {
-              const errorDetail = data.detail || data.message || 'Authentication failed.';
-              Alert.alert(
-                'Google Login', 
-                errorDetail.includes('expired') 
-                  ? 'Your Google session expired. Please tap the Google button to try again.'
-                  : `${errorDetail}\n\nTip: If this keeps happening, try using the Sign In form with your credentials instead.`
-              );
-            }
-            setGoogleLoading(false);
+            await processGoogleSession(sessionId);
           }
         }
       }
+      // On native, the Google callback is handled directly in handleGoogleLogin
+      // via openAuthSessionAsync result — no need to check here
     } catch (error) {
       console.error('Google callback error:', error);
+      setGoogleLoading(false);
+    }
+  };
+
+  // Shared handler: exchange Google session_id with backend
+  const processGoogleSession = async (sessionId: string) => {
+    try {
+      setGoogleLoading(true);
+      const response = await fetch(`${API_URL}/api/auth/google/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        await AsyncStorage.setItem('authToken', data.token);
+        await AsyncStorage.setItem('technician', JSON.stringify(data.technician));
+        await AsyncStorage.setItem('loginSource', data.source || 'google');
+
+        if (biometricAvailable) {
+          await AsyncStorage.setItem('biometricEnabled', 'true');
+        }
+
+        await navigateAfterAuth();
+        return;
+      } else {
+        const errorDetail = data.detail || data.message || 'Authentication failed.';
+        Alert.alert(
+          'Google Login',
+          errorDetail.includes('expired')
+            ? 'Your Google session expired. Please tap the Google button to try again.'
+            : `${errorDetail}\n\nTip: If this keeps happening, try using the Sign In form with your credentials instead.`
+        );
+      }
+    } catch (error) {
+      console.error('Google session exchange error:', error);
+      Alert.alert('Google Login', 'Unable to complete sign-in. Please try again.');
+    } finally {
       setGoogleLoading(false);
     }
   };
@@ -183,19 +194,15 @@ export default function LoginScreen() {
         }
       }
       
-      // On native, check deep link for SF callback
-      const url = await Linking.getInitialURL();
-      if (url && url.includes('sf_token=')) {
-        const urlParams = new URL(url);
-        const sfToken = urlParams.searchParams.get('sf_token');
-        const sfUser = urlParams.searchParams.get('sf_user');
-        
-        if (sfToken && sfUser) {
-          const technician = JSON.parse(decodeURIComponent(sfUser));
-          await AsyncStorage.setItem('authToken', sfToken);
-          await AsyncStorage.setItem('technician', JSON.stringify(technician));
-          await AsyncStorage.setItem('loginSource', 'salesforce');
-          await navigateAfterAuth();
+      // On native, check for deep link with SF callback data
+      // This handles the case where the app is opened via deep link
+      if (Platform.OS !== 'web') {
+        const url = await Linking.getInitialURL();
+        if (url) {
+          console.log('[SF Callback] Initial URL:', url);
+          if (url.includes('sf_token=') || url.includes('sf_success=') || url.includes('sf_error=')) {
+            await processSalesforceNativeCallback(url);
+          }
         }
       }
     } catch (error) {
@@ -348,8 +355,19 @@ export default function LoginScreen() {
   const handleSalesforceLogin = async () => {
     setSfLoading(true);
     try {
-      // First, get the Salesforce auth URL from the backend
-      const response = await fetch(`${API_URL}/api/auth/salesforce/init`);
+      // Generate the redirect URI for the current platform
+      // On native (Expo Go / standalone), this uses the correct scheme
+      // On web, we'll handle it via page redirect
+      const nativeRedirectUri = Platform.OS !== 'web'
+        ? AuthSession.makeRedirectUri({ scheme: 'blueboxairtech', path: 'auth' })
+        : '';
+
+      // Get the Salesforce auth URL from the backend, passing mobile redirect if native
+      const initUrl = Platform.OS !== 'web'
+        ? `${API_URL}/api/auth/salesforce/init?mobile_redirect=${encodeURIComponent(nativeRedirectUri)}`
+        : `${API_URL}/api/auth/salesforce/init`;
+
+      const response = await fetch(initUrl);
       const data = await response.json();
       
       if (!data.auth_url) {
@@ -366,15 +384,21 @@ export default function LoginScreen() {
       const authUrl = data.auth_url;
       
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        // On web, navigate directly to Salesforce login
+        // On web, navigate directly to Salesforce login page
         window.location.href = authUrl;
       } else {
-        // On native, use WebBrowser (Safari View Controller / Chrome Custom Tabs)
-        // This keeps users in the app and shows the URL bar for security verification
-        await WebBrowser.openBrowserAsync(authUrl, {
-          showTitle: true,
-          enableBarCollapsing: false,
-        });
+        // On native, use openAuthSessionAsync to capture the redirect back to the app
+        console.log('[SF Auth] Opening auth session with redirect:', nativeRedirectUri);
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, nativeRedirectUri);
+        console.log('[SF Auth] Result:', JSON.stringify(result));
+        
+        if (result.type === 'success' && result.url) {
+          // Parse the redirect URL for SF auth data
+          await processSalesforceNativeCallback(result.url);
+        } else if (result.type === 'cancel' || result.type === 'dismiss') {
+          console.log('[SF Auth] User cancelled');
+          Alert.alert('Salesforce Login', 'Login was cancelled. You can try again or use another login method.');
+        }
       }
     } catch (error) {
       console.error('Salesforce OAuth error:', error);
@@ -384,7 +408,53 @@ export default function LoginScreen() {
         [{ text: 'OK' }]
       );
       setShowCredentialForm(true);
+    } finally {
       setSfLoading(false);
+    }
+  };
+
+  // Process Salesforce OAuth callback from native auth session
+  const processSalesforceNativeCallback = async (url: string) => {
+    try {
+      console.log('[SF Native Callback] Processing URL:', url);
+      
+      // Parse query parameters from the redirect URL
+      const urlObj = new URL(url);
+      const sfToken = urlObj.searchParams.get('sf_token');
+      const sfUser = urlObj.searchParams.get('sf_user');
+      const sfSuccess = urlObj.searchParams.get('sf_success');
+      const sfError = urlObj.searchParams.get('sf_error');
+
+      if (sfError) {
+        Alert.alert(
+          'Salesforce Login',
+          `Salesforce authentication failed: ${decodeURIComponent(sfError)}\n\nPlease try again or use the credentials login.`,
+          [{ text: 'OK' }]
+        );
+        setShowCredentialForm(true);
+        return;
+      }
+
+      if (sfSuccess === 'true' && sfToken && sfUser) {
+        const technician = JSON.parse(decodeURIComponent(sfUser));
+        await AsyncStorage.setItem('authToken', sfToken);
+        await AsyncStorage.setItem('technician', JSON.stringify(technician));
+        await AsyncStorage.setItem('loginSource', 'salesforce');
+
+        if (biometricAvailable) {
+          await AsyncStorage.setItem('biometricEnabled', 'true');
+        }
+
+        // Trigger background Salesforce sync
+        triggerSalesforceSync(sfToken);
+
+        await navigateAfterAuth();
+      } else {
+        Alert.alert('Salesforce Login', 'Authentication response was incomplete. Please try again.');
+      }
+    } catch (error) {
+      console.error('SF native callback processing error:', error);
+      Alert.alert('Salesforce Login', 'Failed to process login. Please try again.');
     }
   };
 
@@ -397,15 +467,45 @@ export default function LoginScreen() {
         const redirectUrl = window.location.origin;
         window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
       } else {
-        // On native: use WebBrowser (Safari View Controller / Chrome Custom Tabs)
-        const redirectUrl = 'bbatech://login';
-        await WebBrowser.openBrowserAsync(
-          `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`,
-          {
-            showTitle: true,
-            enableBarCollapsing: false,
+        // On native: use openAuthSessionAsync to capture the Google redirect
+        const nativeRedirectUri = AuthSession.makeRedirectUri({ scheme: 'blueboxairtech', path: 'google-auth' });
+        console.log('[Google Auth] Native redirect URI:', nativeRedirectUri);
+        
+        const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(nativeRedirectUri)}`;
+        console.log('[Google Auth] Opening auth session...');
+        
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, nativeRedirectUri);
+        console.log('[Google Auth] Result:', JSON.stringify(result));
+        
+        if (result.type === 'success' && result.url) {
+          // Extract session_id from the redirect URL
+          // The URL might have session_id as a hash fragment or query param
+          const resultUrl = result.url;
+          let sessionId = '';
+          
+          // Check hash fragment first: ...#session_id=abc123
+          if (resultUrl.includes('#session_id=')) {
+            sessionId = resultUrl.split('session_id=')[1]?.split('&')[0] || '';
           }
-        );
+          // Also check query params: ...?session_id=abc123
+          if (!sessionId && resultUrl.includes('session_id=')) {
+            sessionId = resultUrl.split('session_id=')[1]?.split('&')[0]?.split('#')[0] || '';
+          }
+          
+          if (sessionId) {
+            console.log('[Google Auth] Got session_id, exchanging with backend...');
+            await processGoogleSession(sessionId);
+          } else {
+            console.log('[Google Auth] No session_id in URL:', resultUrl);
+            Alert.alert('Google Login', 'No authentication token received. Please try again.');
+            setGoogleLoading(false);
+          }
+        } else if (result.type === 'cancel' || result.type === 'dismiss') {
+          console.log('[Google Auth] User cancelled');
+          setGoogleLoading(false);
+        } else {
+          setGoogleLoading(false);
+        }
       }
     } catch (error) {
       console.error('Google Login error:', error);

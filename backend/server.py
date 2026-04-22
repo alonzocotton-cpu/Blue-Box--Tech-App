@@ -680,6 +680,7 @@ def generate_pkce_pair():
 # In-memory store for PKCE verifiers (keyed by state) with timestamps for cleanup
 _pkce_store: Dict[str, str] = {}
 _pkce_timestamps: Dict[str, float] = {}
+_pkce_mobile_redirect: Dict[str, str] = {}  # Store mobile redirect URIs per state
 PKCE_TTL_SECONDS = 600  # 10 minutes
 
 def _cleanup_pkce_store():
@@ -690,6 +691,7 @@ def _cleanup_pkce_store():
     for k in expired:
         _pkce_store.pop(k, None)
         _pkce_timestamps.pop(k, None)
+        _pkce_mobile_redirect.pop(k, None)
     if expired:
         logging.info(f"Cleaned up {len(expired)} expired PKCE entries")
 
@@ -1304,8 +1306,13 @@ async def register_user(data: dict = Body(...)):
     }
 
 @api_router.get("/auth/salesforce/init")
-async def salesforce_oauth_init(redirect_uri: str = ""):
-    """Initialize Salesforce OAuth flow - returns the authorization URL with PKCE"""
+async def salesforce_oauth_init(redirect_uri: str = "", mobile_redirect: str = ""):
+    """Initialize Salesforce OAuth flow - returns the authorization URL with PKCE
+    
+    Args:
+        mobile_redirect: If provided, the callback will redirect to this URI instead of the web frontend.
+                        Used by native mobile apps (Expo Go, standalone builds) to capture the OAuth result.
+    """
     sf = get_sf_config()
     if not sf["client_id"]:
         raise HTTPException(status_code=500, detail="Salesforce not configured")
@@ -1321,6 +1328,11 @@ async def salesforce_oauth_init(redirect_uri: str = ""):
     state_key = f"init-{secrets.token_urlsafe(16)}"
     _pkce_store[state_key] = code_verifier
     _pkce_timestamps[state_key] = time.time()
+    
+    # Store mobile redirect URI if provided (native app flow)
+    if mobile_redirect:
+        _pkce_mobile_redirect[state_key] = mobile_redirect
+        logging.info(f"SF Init: mobile redirect stored for state={state_key}: {mobile_redirect}")
     
     params = {
         "response_type": "code",
@@ -1438,8 +1450,13 @@ async def salesforce_oauth_callback(code: str = "", state: str = "", error: str 
     
     if error:
         logging.warning(f"SF Callback error: {error} - {error_description}")
-        # Redirect to frontend with error
-        return RedirectResponse(url=f"{frontend_url}/?sf_error={urllib.parse.quote(error_description or error)}")
+        # Check if there's a mobile redirect for this state
+        mobile_redirect_err = _pkce_mobile_redirect.pop(state, None) if state else None
+        _pkce_store.pop(state, None)
+        _pkce_timestamps.pop(state, None)
+        redirect_base = mobile_redirect_err if mobile_redirect_err else frontend_url
+        separator = "&" if "?" in redirect_base else "?"
+        return RedirectResponse(url=f"{redirect_base}{separator}sf_error={urllib.parse.quote(error_description or error)}")
     
     if not code:
         raise HTTPException(status_code=400, detail="No authorization code received")
@@ -1450,7 +1467,8 @@ async def salesforce_oauth_callback(code: str = "", state: str = "", error: str 
     _cleanup_pkce_store()  # Clean up expired entries first
     code_verifier = _pkce_store.pop(state, None)
     _pkce_timestamps.pop(state, None)
-    logging.info(f"SF Callback: PKCE verifier found={code_verifier is not None}, state={state}")
+    mobile_redirect = _pkce_mobile_redirect.pop(state, None)
+    logging.info(f"SF Callback: PKCE verifier found={code_verifier is not None}, state={state}, mobile_redirect={mobile_redirect}")
     
     try:
         async with httpx.AsyncClient() as client_http:
@@ -1574,8 +1592,12 @@ async def salesforce_oauth_callback(code: str = "", state: str = "", error: str 
             # Check admin status
             technician["is_admin"] = await is_admin(technician.get("email", ""))
             tech_json = urllib.parse.quote(json.dumps(technician))
+            
+            # If mobile_redirect was provided during init, redirect there instead of web frontend
+            redirect_base = mobile_redirect if mobile_redirect else frontend_url
+            separator = "&" if "?" in redirect_base else "?"
             return RedirectResponse(
-                url=f"{frontend_url}/?sf_token={access_token}&sf_user={tech_json}&sf_success=true"
+                url=f"{redirect_base}{separator}sf_token={access_token}&sf_user={tech_json}&sf_success=true"
             )
             
     except Exception as e:
