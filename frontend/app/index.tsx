@@ -355,50 +355,84 @@ export default function LoginScreen() {
   const handleSalesforceLogin = async () => {
     setSfLoading(true);
     try {
-      // Generate the redirect URI for the current platform
-      // On native (Expo Go / standalone), this uses the correct scheme
-      // On web, we'll handle it via page redirect
-      const nativeRedirectUri = Platform.OS !== 'web'
-        ? AuthSession.makeRedirectUri({ scheme: 'blueboxairtech', path: 'auth' })
-        : '';
-
-      // Get the Salesforce auth URL from the backend, passing mobile redirect if native
-      const initUrl = Platform.OS !== 'web'
-        ? `${API_URL}/api/auth/salesforce/init?mobile_redirect=${encodeURIComponent(nativeRedirectUri)}`
-        : `${API_URL}/api/auth/salesforce/init`;
-
-      const response = await fetch(initUrl);
-      const data = await response.json();
-      
-      if (!data.auth_url) {
-        Alert.alert(
-          'Salesforce Login', 
-          'Salesforce SSO is available for Blue Box Air employees. If you are not a company employee, please use the credentials login below.',
-          [{ text: 'OK' }]
-        );
-        setSfLoading(false);
-        setShowCredentialForm(true);
-        return;
-      }
-      
-      const authUrl = data.auth_url;
-      
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        // On web, navigate directly to Salesforce login page
-        window.location.href = authUrl;
-      } else {
-        // On native, use openAuthSessionAsync to capture the redirect back to the app
-        console.log('[SF Auth] Opening auth session with redirect:', nativeRedirectUri);
-        const result = await WebBrowser.openAuthSessionAsync(authUrl, nativeRedirectUri);
-        console.log('[SF Auth] Result:', JSON.stringify(result));
-        
-        if (result.type === 'success' && result.url) {
-          // Parse the redirect URL for SF auth data
-          await processSalesforceNativeCallback(result.url);
-        } else if (result.type === 'cancel' || result.type === 'dismiss') {
-          console.log('[SF Auth] User cancelled');
-          Alert.alert('Salesforce Login', 'Login was cancelled. You can try again or use another login method.');
+        // Web flow: standard redirect
+        const response = await fetch(`${API_URL}/api/auth/salesforce/init`);
+        const data = await response.json();
+        if (data.auth_url) {
+          window.location.href = data.auth_url;
+        } else {
+          Alert.alert('Salesforce Login', 'Salesforce SSO is not available.');
+          setSfLoading(false);
         }
+      } else {
+        // NATIVE flow: polling-based (no deep links needed — works in Expo Go!)
+        // 1. Get auth URL and poll token from backend
+        const response = await fetch(`${API_URL}/api/auth/salesforce/init-mobile`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (!data.auth_url || !data.poll_token) {
+          Alert.alert('Salesforce Login', 'Salesforce SSO is not available. Please use credential login.');
+          setSfLoading(false);
+          setShowCredentialForm(true);
+          return;
+        }
+        
+        const pollToken = data.poll_token;
+        
+        // 2. Open Salesforce login in the system browser (Safari/Chrome)
+        console.log('[SF Auth] Opening system browser for Salesforce login...');
+        await Linking.openURL(data.auth_url);
+        
+        // 3. Poll for the auth result (the backend will fill it when the callback completes)
+        console.log('[SF Auth] Starting to poll for auth result...');
+        let pollAttempts = 0;
+        const maxPollAttempts = 120; // 2 minutes at 1 second intervals
+        
+        const pollInterval = setInterval(async () => {
+          pollAttempts++;
+          try {
+            const pollResponse = await fetch(`${API_URL}/api/auth/poll/${pollToken}`);
+            const pollData = await pollResponse.json();
+            
+            if (pollData.status === 'success' && pollData.data) {
+              clearInterval(pollInterval);
+              console.log('[SF Auth] Poll success! Logging in...');
+              
+              const { technician, token } = pollData.data;
+              await AsyncStorage.setItem('authToken', token);
+              await AsyncStorage.setItem('technician', JSON.stringify(technician));
+              await AsyncStorage.setItem('loginSource', 'salesforce');
+              
+              if (biometricAvailable) {
+                await AsyncStorage.setItem('biometricEnabled', 'true');
+              }
+              
+              triggerSalesforceSync(token);
+              setSfLoading(false);
+              await navigateAfterAuth();
+              
+            } else if (pollData.status === 'error') {
+              clearInterval(pollInterval);
+              setSfLoading(false);
+              const errorMsg = pollData.data?.error || 'Authentication failed';
+              Alert.alert('Salesforce Login', `${errorMsg}\n\nPlease try again.`);
+              
+            } else if (pollAttempts >= maxPollAttempts) {
+              clearInterval(pollInterval);
+              setSfLoading(false);
+              Alert.alert(
+                'Salesforce Login', 
+                'Login timed out. Please return to the app and try again.',
+                [{ text: 'OK' }]
+              );
+            }
+            // else status is 'pending' — keep polling
+          } catch (pollError) {
+            console.error('[SF Auth] Poll error:', pollError);
+            // Don't stop polling on transient errors
+          }
+        }, 1000); // Poll every 1 second
       }
     } catch (error) {
       console.error('Salesforce OAuth error:', error);
@@ -408,7 +442,6 @@ export default function LoginScreen() {
         [{ text: 'OK' }]
       );
       setShowCredentialForm(true);
-    } finally {
       setSfLoading(false);
     }
   };

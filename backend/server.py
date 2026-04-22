@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, Body
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -1346,7 +1346,89 @@ async def salesforce_oauth_init(redirect_uri: str = "", mobile_redirect: str = "
     
     auth_url = f"{sf['login_url']}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
     
-    return {"auth_url": auth_url, "callback_url": callback_url}
+    return {"auth_url": auth_url, "callback_url": callback_url, "state": state_key}
+
+# ============ Polling-based Mobile Auth Flow ============
+# This avoids deep links which don't work in Expo Go.
+# Flow: App creates a poll token → opens browser → polls for result → backend fills result on callback
+
+_auth_poll_store: Dict[str, dict] = {}  # poll_token -> {"status": "pending"|"success"|"error", "data": {...}, "created_at": float}
+
+@api_router.post("/auth/salesforce/init-mobile")
+async def salesforce_oauth_init_mobile():
+    """Initialize Salesforce OAuth for mobile - returns auth URL and a poll token.
+    
+    The app opens the auth URL in the system browser, then polls /api/auth/poll/{poll_token}
+    until the callback completes. No deep links needed.
+    """
+    import time
+    sf = get_sf_config()
+    if not sf["client_id"]:
+        raise HTTPException(status_code=500, detail="Salesforce not configured")
+    
+    callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
+    
+    _cleanup_pkce_store()
+    
+    # Generate PKCE pair
+    code_verifier, code_challenge = generate_pkce_pair()
+    state_key = f"mobile-{secrets.token_urlsafe(16)}"
+    _pkce_store[state_key] = code_verifier
+    _pkce_timestamps[state_key] = time.time()
+    
+    # Create a poll token the app will use to check for the auth result
+    poll_token = secrets.token_urlsafe(32)
+    _auth_poll_store[poll_token] = {
+        "status": "pending",
+        "data": None,
+        "created_at": time.time(),
+    }
+    # Store poll_token with the PKCE state so the callback can find it
+    _pkce_mobile_redirect[state_key] = f"poll:{poll_token}"
+    
+    logging.info(f"SF Mobile Init: state={state_key}, poll_token={poll_token[:8]}...")
+    
+    params = {
+        "response_type": "code",
+        "client_id": sf["client_id"],
+        "redirect_uri": callback_url,
+        "scope": "api refresh_token openid profile",
+        "state": state_key,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+    
+    auth_url = f"{sf['login_url']}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
+    
+    return {
+        "auth_url": auth_url,
+        "poll_token": poll_token,
+        "callback_url": callback_url,
+    }
+
+@api_router.get("/auth/poll/{poll_token}")
+async def auth_poll(poll_token: str):
+    """Poll for mobile auth result. Returns pending/success/error status.
+    
+    The app calls this repeatedly after opening the auth browser until status != 'pending'.
+    """
+    import time
+    # Clean up old poll entries (> 10 min)
+    expired = [k for k, v in _auth_poll_store.items() if time.time() - v["created_at"] > 600]
+    for k in expired:
+        _auth_poll_store.pop(k, None)
+    
+    entry = _auth_poll_store.get(poll_token)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Poll token not found or expired")
+    
+    if entry["status"] == "pending":
+        return {"status": "pending"}
+    
+    # Return the result and clean up
+    result = entry.copy()
+    _auth_poll_store.pop(poll_token, None)
+    return result
 
 @api_router.get("/auth/salesforce/redirect")
 async def salesforce_oauth_redirect():
@@ -1454,6 +1536,22 @@ async def salesforce_oauth_callback(code: str = "", state: str = "", error: str 
         mobile_redirect_err = _pkce_mobile_redirect.pop(state, None) if state else None
         _pkce_store.pop(state, None)
         _pkce_timestamps.pop(state, None)
+        
+        # If this was a mobile poll-based flow, store the error result
+        if mobile_redirect_err and mobile_redirect_err.startswith("poll:"):
+            poll_token = mobile_redirect_err.replace("poll:", "")
+            if poll_token in _auth_poll_store:
+                _auth_poll_store[poll_token]["status"] = "error"
+                _auth_poll_store[poll_token]["data"] = {"error": error_description or error}
+            # Show a "return to app" page
+            return HTMLResponse(content=f"""
+            <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>BBA Tech</title>
+            <style>body{{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#0a1628;color:white;text-align:center;}}
+            .box{{padding:40px;max-width:400px;}}.icon{{font-size:48px;margin-bottom:16px;}}h2{{color:#ff6b6b;}}p{{color:#8899aa;line-height:1.6;}}</style></head>
+            <body><div class="box"><div class="icon">⚠️</div><h2>Login Failed</h2><p>{error_description or error}</p><p>Please return to the BBA Tech app and try again.</p></div></body></html>
+            """, status_code=200)
+        
         redirect_base = mobile_redirect_err if mobile_redirect_err else frontend_url
         separator = "&" if "?" in redirect_base else "?"
         return RedirectResponse(url=f"{redirect_base}{separator}sf_error={urllib.parse.quote(error_description or error)}")
@@ -1593,7 +1691,28 @@ async def salesforce_oauth_callback(code: str = "", state: str = "", error: str 
             technician["is_admin"] = await is_admin(technician.get("email", ""))
             tech_json = urllib.parse.quote(json.dumps(technician))
             
-            # If mobile_redirect was provided during init, redirect there instead of web frontend
+            # If this was a mobile poll-based flow, store the result for polling
+            if mobile_redirect and mobile_redirect.startswith("poll:"):
+                poll_token = mobile_redirect.replace("poll:", "")
+                if poll_token in _auth_poll_store:
+                    _auth_poll_store[poll_token]["status"] = "success"
+                    _auth_poll_store[poll_token]["data"] = {
+                        "success": True,
+                        "technician": technician,
+                        "token": access_token,
+                        "source": "salesforce",
+                    }
+                    logging.info(f"SF Callback: Poll result stored for token={poll_token[:8]}...")
+                # Show a "return to app" success page
+                return HTMLResponse(content=f"""
+                <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>BBA Tech - Login Successful</title>
+                <style>body{{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#0a1628;color:white;text-align:center;}}
+                .box{{padding:40px;max-width:400px;}}.icon{{font-size:64px;margin-bottom:16px;}}h2{{color:#76c043;}}p{{color:#8899aa;line-height:1.6;}}</style></head>
+                <body><div class="box"><div class="icon">✅</div><h2>Login Successful!</h2><p>Welcome, {technician.get('full_name', 'Technician')}!</p><p>Return to the <strong>BBA Tech</strong> app — you'll be logged in automatically.</p></div></body></html>
+                """, status_code=200)
+            
+            # Standard web redirect flow
             redirect_base = mobile_redirect if mobile_redirect else frontend_url
             separator = "&" if "?" in redirect_base else "?"
             return RedirectResponse(
