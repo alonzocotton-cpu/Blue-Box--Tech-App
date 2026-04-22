@@ -90,6 +90,13 @@ export default function ProjectDetailScreen() {
   // Assigned technicians state
   const [assignedTechs, setAssignedTechs] = useState<any[]>([]);
   const [showAssignTechModal, setShowAssignTechModal] = useState(false);
+
+  // Auto-load team members when assign modal opens
+  useEffect(() => {
+    if (showAssignTechModal) {
+      searchTechnicians('');
+    }
+  }, [showAssignTechModal]);
   const [techSearch, setTechSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchingTechs, setSearchingTechs] = useState(false);
@@ -143,38 +150,58 @@ export default function ProjectDetailScreen() {
 
   const searchTechnicians = async (query: string) => {
     setTechSearch(query);
-    if (query.length < 2) {
-      setSearchResults([]);
+    if (query.length < 1) {
+      // Show all team members when search is empty (for easy browsing)
+      setSearchingTechs(true);
+      try {
+        const response = await fetch(`${API_URL}/api/team/members`);
+        const data = await response.json();
+        const assignedEmails = assignedTechs.map((t: any) => t.email?.toLowerCase());
+        const assignedNames = assignedTechs.map((t: any) => t.name?.toLowerCase());
+        const filtered = (data.members || []).filter((m: any) => 
+          !assignedEmails.includes(m.email?.toLowerCase()) &&
+          !assignedNames.includes(m.name?.toLowerCase())
+        );
+        setSearchResults(filtered);
+      } catch (error) {
+        console.error('Error loading team members:', error);
+        setSearchResults([]);
+      } finally {
+        setSearchingTechs(false);
+      }
       return;
     }
     setSearchingTechs(true);
     try {
-      const response = await fetch(`${API_URL}/api/salesforce/users?search=${encodeURIComponent(query)}`);
+      // Search team members from the org chart
+      const response = await fetch(`${API_URL}/api/team/members?search=${encodeURIComponent(query)}`);
       const data = await response.json();
-      // Filter out already assigned techs
       const assignedEmails = assignedTechs.map((t: any) => t.email?.toLowerCase());
-      const filtered = (data.users || []).filter((u: any) => 
-        !assignedEmails.includes(u.email?.toLowerCase())
+      const assignedNames = assignedTechs.map((t: any) => t.name?.toLowerCase());
+      const filtered = (data.members || []).filter((m: any) => 
+        !assignedEmails.includes(m.email?.toLowerCase()) &&
+        !assignedNames.includes(m.name?.toLowerCase())
       );
       setSearchResults(filtered);
-    } catch (error) {
-      // Fallback: search mock technicians
-      try {
-        const response = await fetch(`${API_URL}/api/technicians`);
-        const data = await response.json();
-        const assignedEmails = assignedTechs.map((t: any) => t.email?.toLowerCase());
-        const filtered = (data.technicians || []).filter((t: any) =>
-          t.full_name?.toLowerCase().includes(query.toLowerCase()) &&
-          !assignedEmails.includes(t.email?.toLowerCase())
-        );
-        setSearchResults(filtered.map((t: any) => ({
-          name: t.full_name,
-          email: t.email,
-          title: t.title,
-        })));
-      } catch (e) {
-        console.error('Error searching technicians:', e);
+      
+      // Also try Salesforce users if team search returns few results
+      if (filtered.length < 3) {
+        try {
+          const sfResponse = await fetch(`${API_URL}/api/salesforce/users?search=${encodeURIComponent(query)}`);
+          const sfData = await sfResponse.json();
+          const existingNames = new Set(filtered.map((m: any) => m.name?.toLowerCase()));
+          const sfFiltered = (sfData.users || []).filter((u: any) => 
+            !assignedEmails.includes(u.email?.toLowerCase()) &&
+            !existingNames.has((u.name || u.full_name)?.toLowerCase())
+          );
+          setSearchResults([...filtered, ...sfFiltered]);
+        } catch (e) {
+          // SF search failed, just use team results
+        }
       }
+    } catch (error) {
+      console.error('Error searching team members:', error);
+      setSearchResults([]);
     } finally {
       setSearchingTechs(false);
     }
@@ -1848,7 +1875,7 @@ export default function ProjectDetailScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Assign Technician Modal */}
+      {/* Assign Team Member to Project Modal */}
       <Modal visible={showAssignTechModal} transparent animationType="slide">
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1856,7 +1883,7 @@ export default function ProjectDetailScreen() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Technician</Text>
+              <Text style={styles.modalTitle}>Assign Team Member</Text>
               <TouchableOpacity onPress={() => {
                 setShowAssignTechModal(false);
                 setTechSearch('');
@@ -1866,50 +1893,52 @@ export default function ProjectDetailScreen() {
               </TouchableOpacity>
             </View>
             
+            <Text style={{ color: COLORS.gray, fontSize: 12, paddingHorizontal: 16, marginBottom: 8 }}>
+              Select a team member from your org chart to assign to this project
+            </Text>
+            
             <View style={styles.techSearchContainer}>
               <Ionicons name="search" size={18} color={COLORS.grayDark} />
               <TextInput
                 style={styles.techSearchInput}
-                placeholder="Type a name to search..."
+                placeholder="Search team members by name, email, or role..."
                 placeholderTextColor={COLORS.grayDark}
                 value={techSearch}
                 onChangeText={searchTechnicians}
-                autoFocus
               />
               {searchingTechs && <ActivityIndicator size="small" color={COLORS.lime} />}
             </View>
 
-            <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ maxHeight: 400 }} keyboardShouldPersistTaps="handled">
               {searchResults.length > 0 ? (
                 searchResults.map((user: any, idx: number) => (
                   <TouchableOpacity
-                    key={user.email || idx}
+                    key={user.email || user.id || idx}
                     style={styles.techSearchResult}
                     onPress={() => assignTechToProject(user)}
                   >
-                    <View style={styles.techSearchAvatar}>
-                      <Text style={styles.techSearchInitial}>
+                    <View style={[styles.techSearchAvatar, { backgroundColor: (user.color || COLORS.lime) + '25' }]}>
+                      <Text style={[styles.techSearchInitial, { color: user.color || COLORS.lime }]}>
                         {(user.name || user.full_name || '?').charAt(0).toUpperCase()}
                       </Text>
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.techSearchName}>{user.name || user.full_name}</Text>
                       <Text style={styles.techSearchEmail}>
-                        {user.title || user.role || 'Technician'}{user.email ? ` · ${user.email}` : ''}
+                        {user.role || user.title || 'Team Member'}{user.region ? ` · ${user.region}` : ''}{user.email ? ` · ${user.email}` : ''}
                       </Text>
                     </View>
                     <Ionicons name="add-circle" size={24} color={COLORS.lime} />
                   </TouchableOpacity>
                 ))
-              ) : techSearch.length >= 2 && !searchingTechs ? (
+              ) : !searchingTechs ? (
                 <View style={{ padding: 20, alignItems: 'center' }}>
-                  <Ionicons name="search-outline" size={32} color={COLORS.grayDark} />
-                  <Text style={{ color: COLORS.grayDark, marginTop: 8 }}>No matching technicians found</Text>
-                </View>
-              ) : techSearch.length < 2 ? (
-                <View style={{ padding: 20, alignItems: 'center' }}>
-                  <Ionicons name="person-add-outline" size={32} color={COLORS.grayDark} />
-                  <Text style={{ color: COLORS.grayDark, marginTop: 8 }}>Type at least 2 characters to search</Text>
+                  <Ionicons name="people-outline" size={32} color={COLORS.grayDark} />
+                  <Text style={{ color: COLORS.grayDark, marginTop: 8, textAlign: 'center' }}>
+                    {techSearch.length > 0 
+                      ? 'No matching team members found' 
+                      : 'Add team members in the Team tab first'}
+                  </Text>
                 </View>
               ) : null}
             </ScrollView>

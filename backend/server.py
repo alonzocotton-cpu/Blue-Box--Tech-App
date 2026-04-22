@@ -2391,11 +2391,9 @@ DEFAULT_ROLES = [
     {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "Florida", "color": "#3b82f6", "icon": "business"},
     {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "New Orleans", "color": "#3b82f6", "icon": "business"},
     {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "Dallas", "color": "#3b82f6", "icon": "business"},
-    # Per-region roles
-    {"name": "Field Supervisor", "level": 3, "parent": "Operations Manager", "region": None, "color": "#22c55e", "icon": "shield-checkmark"},
-    {"name": "Lead Technician", "level": 4, "parent": "Field Supervisor", "region": None, "color": "#c5d93d", "icon": "medal"},
-    {"name": "Technician", "level": 5, "parent": "Lead Technician", "region": None, "color": "#94a3b8", "icon": "construct"},
-    {"name": "Junior Technician", "level": 6, "parent": "Technician", "region": None, "color": "#64748b", "icon": "school"},
+    # Per-region field roles — Operations Manager → Senior Technician → Junior Technician
+    {"name": "Senior Technician", "level": 3, "parent": "Operations Manager", "region": None, "color": "#22c55e", "icon": "shield-checkmark"},
+    {"name": "Junior Technician", "level": 4, "parent": "Senior Technician", "region": None, "color": "#94a3b8", "icon": "construct"},
 ]
 
 # Default team members to seed
@@ -2407,19 +2405,16 @@ DEFAULT_TEAM_MEMBERS = [
 
 async def seed_roles():
     """Seed default roles and initial team members if the collections are empty"""
-    # Reset and re-seed roles to get latest structure
-    existing_count = await db.roles.count_documents({})
-    # Check if we need to update (e.g., missing CEO/Founder or Head of Finance)
-    has_ceo_founder = await db.roles.count_documents({"name": "CEO/Founder"})
-    has_head_finance = await db.roles.count_documents({"name": "Head of Finance"})
+    # Check if we need to update roles (check for Senior Technician as indicator of new schema)
+    has_senior_tech = await db.roles.count_documents({"name": "Senior Technician"})
     
-    if existing_count == 0 or not has_ceo_founder or not has_head_finance:
-        # Drop old roles and re-seed
+    if not has_senior_tech:
+        # Drop old roles and re-seed with updated hierarchy
         await db.roles.delete_many({})
         for role in DEFAULT_ROLES:
             role_doc = {**role, "created_at": datetime.utcnow().isoformat()}
             await db.roles.insert_one(role_doc)
-        logging.info(f"Seeded {len(DEFAULT_ROLES)} default roles (including CEO/Founder, Head of Finance)")
+        logging.info(f"Seeded {len(DEFAULT_ROLES)} roles with updated hierarchy (Ops Manager → Sr Tech → Jr Tech)")
     
     # Seed default team members if they don't already exist
     for member in DEFAULT_TEAM_MEMBERS:
@@ -2641,6 +2636,34 @@ async def get_team():
         "total": len(members),
         "all_regions": REGIONS,
     }
+
+@api_router.get("/team/members")
+async def get_team_members_list(search: str = ""):
+    """Get a flat list of all team members for assignment pickers.
+    Returns members with their role, region, and email — used when assigning techs to projects.
+    """
+    query = {}
+    if search:
+        query["$or"] = [
+            {"member_name": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}},
+            {"role_name": {"$regex": search, "$options": "i"}},
+        ]
+    
+    members = []
+    async for m in db.team_assignments.find(query).sort([("level", 1), ("member_name", 1)]):
+        members.append({
+            "id": str(m.get("_id", "")),
+            "name": m.get("member_name", ""),
+            "email": m.get("email", ""),
+            "role": m.get("role_name", ""),
+            "region": m.get("region", ""),
+            "level": m.get("level", 99),
+            "color": m.get("color", "#94a3b8"),
+            "icon": m.get("icon", "person"),
+        })
+    
+    return {"members": members, "total": len(members)}
 
 @api_router.get("/auth/profile")
 async def get_profile(token: str = ""):
