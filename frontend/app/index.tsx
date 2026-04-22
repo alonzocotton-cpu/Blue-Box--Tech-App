@@ -72,7 +72,6 @@ export default function LoginScreen() {
   const [registerName, setRegisterName] = useState('');
   const [registerPhone, setRegisterPhone] = useState('');
   const [registerLoading, setRegisterLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const videoRef = useRef<any>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const textFadeAnim = useRef(new Animated.Value(0)).current;
