@@ -39,6 +39,13 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=True)
 
+# Configure logging properly so all log messages appear in supervisor output
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:     %(message)s",
+    force=True,
+)
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -670,8 +677,21 @@ def generate_pkce_pair():
     code_challenge = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
     return code_verifier, code_challenge
 
-# In-memory store for PKCE verifiers (keyed by state)
+# In-memory store for PKCE verifiers (keyed by state) with timestamps for cleanup
 _pkce_store: Dict[str, str] = {}
+_pkce_timestamps: Dict[str, float] = {}
+PKCE_TTL_SECONDS = 600  # 10 minutes
+
+def _cleanup_pkce_store():
+    """Remove expired PKCE entries"""
+    import time
+    now = time.time()
+    expired = [k for k, t in _pkce_timestamps.items() if now - t > PKCE_TTL_SECONDS]
+    for k in expired:
+        _pkce_store.pop(k, None)
+        _pkce_timestamps.pop(k, None)
+    if expired:
+        logging.info(f"Cleaned up {len(expired)} expired PKCE entries")
 
 # ============ Admin Access Control ============
 
@@ -773,13 +793,15 @@ async def revoke_admin(data: dict):
 
 @api_router.post("/auth/login")
 async def login(credentials: TechnicianLogin):
-    """Login with Salesforce username/password (Resource Owner Password Flow)"""
+    """Login with Salesforce username/password or local profile match"""
     sf = get_sf_config()
     
-    # Try real Salesforce OAuth first if credentials are configured
+    # Try real Salesforce OAuth (password grant) with short timeout
+    # Note: Many Salesforce orgs block password grant (requires MFA disabled, security token appended)
+    sf_login_success = False
     if sf["client_id"] and sf["client_secret"]:
         try:
-            async with httpx.AsyncClient() as client_http:
+            async with httpx.AsyncClient(timeout=10.0) as client_http:
                 token_response = await client_http.post(
                     f"{sf['login_url']}/services/oauth2/token",
                     data={
@@ -790,7 +812,6 @@ async def login(credentials: TechnicianLogin):
                         "password": credentials.password,
                     },
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=30.0,
                 )
                 
                 if token_response.status_code == 200:
@@ -846,6 +867,7 @@ async def login(credentials: TechnicianLogin):
                         upsert=True,
                     )
                     
+                    sf_login_success = True
                     return {
                         "success": True,
                         "message": "Salesforce login successful",
@@ -858,13 +880,13 @@ async def login(credentials: TechnicianLogin):
                     error_desc = sf_error.get("error_description", "Invalid credentials")
                     error_code = sf_error.get("error", "unknown")
                     logging.warning(f"Salesforce password login failed: {error_code} - {error_desc}")
-                    logging.warning(f"Salesforce full response: {token_response.text}")
+                    # Fall through to local profile lookup
                     
-                    # Don't block login — fall through to mock so user can still use the app
-                    
+        except httpx.TimeoutException:
+            logging.warning("Salesforce password login timed out, falling through to local auth")
         except Exception as e:
             logging.error(f"Salesforce OAuth error: {e}")
-            # Fall through to mock login
+            # Fall through to local auth
     
     # Fallback: Check if user has a synced Salesforce profile in DB
     synced_profile = None
@@ -1015,18 +1037,38 @@ async def google_auth_session(data: dict = Body(...)):
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
 
-    # Step 1: Exchange session_id with Emergent Auth for user data
+    # Step 1: Exchange session_id with Emergent Auth for user data (with retry)
+    google_user = None
+    max_retries = 3
+    retry_delay = 1.0  # seconds
+    last_error_msg = ""
+    
     try:
         async with httpx.AsyncClient(timeout=15.0) as client_http:
-            auth_resp = await client_http.get(
-                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-                headers={"X-Session-ID": session_id},
-            )
-            if auth_resp.status_code != 200:
-                logging.error(f"Emergent Auth session-data failed: {auth_resp.status_code} {auth_resp.text}")
-                raise HTTPException(status_code=401, detail="Google authentication failed. Please try again.")
+            for attempt in range(max_retries):
+                auth_resp = await client_http.get(
+                    "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                    headers={"X-Session-ID": session_id},
+                )
+                if auth_resp.status_code == 200:
+                    google_user = auth_resp.json()
+                    break
+                
+                last_error_msg = auth_resp.text
+                logging.warning(f"Emergent Auth attempt {attempt+1}/{max_retries} failed: {auth_resp.status_code} {last_error_msg}")
+                
+                if attempt < max_retries - 1:
+                    import asyncio
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 1.5  # exponential backoff
+            
+            if not google_user:
+                logging.error(f"Emergent Auth session-data failed after {max_retries} attempts: {last_error_msg}")
+                raise HTTPException(
+                    status_code=401, 
+                    detail="Google session expired. Please try signing in with Google again."
+                )
 
-            google_user = auth_resp.json()
             google_email = google_user.get("email", "").strip().lower()
             google_name = google_user.get("name", "")
             google_picture = google_user.get("picture", "")
@@ -1035,13 +1077,13 @@ async def google_auth_session(data: dict = Body(...)):
             if not google_email:
                 raise HTTPException(status_code=401, detail="No email received from Google.")
 
-            logging.info(f"Google Auth: {google_email} ({google_name})")
+            logging.info(f"Google Auth SUCCESS: {google_email} ({google_name})")
 
     except HTTPException:
         raise
     except Exception as e:
         logging.error(f"Emergent Auth error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to verify Google authentication.")
+        raise HTTPException(status_code=500, detail="Failed to verify Google authentication. Please try again.")
 
     # Step 2: Match Google email to a Salesforce profile in our DB
     sf_profile = await db.profiles.find_one({
@@ -1270,10 +1312,15 @@ async def salesforce_oauth_init(redirect_uri: str = ""):
     
     callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
+    # Clean up expired PKCE entries first
+    _cleanup_pkce_store()
+    
     # Generate PKCE pair
+    import time
     code_verifier, code_challenge = generate_pkce_pair()
     state_key = f"init-{secrets.token_urlsafe(16)}"
     _pkce_store[state_key] = code_verifier
+    _pkce_timestamps[state_key] = time.time()
     
     params = {
         "response_type": "code",
@@ -1298,10 +1345,15 @@ async def salesforce_oauth_redirect():
     
     callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
+    # Clean up expired PKCE entries
+    _cleanup_pkce_store()
+    
     # Generate PKCE pair
+    import time
     code_verifier, code_challenge = generate_pkce_pair()
     state_key = f"redirect-{secrets.token_urlsafe(16)}"
     _pkce_store[state_key] = code_verifier
+    _pkce_timestamps[state_key] = time.time()
     
     params = {
         "response_type": "code",
@@ -1338,6 +1390,43 @@ async def salesforce_debug():
         "note": "Make sure the 'callback_url_being_sent' matches EXACTLY what is configured in your Salesforce Connected App's Callback URL field."
     }
 
+@api_router.get("/auth/diagnostics")
+async def auth_diagnostics():
+    """Diagnostics endpoint: check health of all auth providers"""
+    results = {}
+    
+    # 1. Check Salesforce config
+    sf = get_sf_config()
+    results["salesforce"] = {
+        "configured": bool(sf["client_id"] and sf["client_secret"]),
+        "login_url": sf["login_url"],
+        "callback_url": sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback",
+    }
+    
+    # 2. Check Emergent Auth reachability
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client_http:
+            resp = await client_http.get("https://auth.emergentagent.com/")
+            results["google_auth"] = {
+                "emergent_auth_reachable": resp.status_code < 500,
+                "status": resp.status_code,
+            }
+    except Exception as e:
+        results["google_auth"] = {"emergent_auth_reachable": False, "error": str(e)}
+    
+    # 3. Check active SF sessions
+    active_sessions = await db.sf_sessions.count_documents({})
+    results["sf_sessions"] = {"active_count": active_sessions}
+    
+    # 4. Demo account
+    results["demo_login"] = {"available": True, "username": "demo@blueboxair.com"}
+    
+    # 5. Registered users count
+    reg_count = await db.registered_users.count_documents({"is_active": True})
+    results["registered_users"] = {"count": reg_count}
+    
+    return results
+
 
 @api_router.get("/auth/salesforce/callback")
 async def salesforce_oauth_callback(code: str = "", state: str = "", error: str = "", error_description: str = ""):
@@ -1358,8 +1447,10 @@ async def salesforce_oauth_callback(code: str = "", state: str = "", error: str 
     callback_url = sf["redirect_uri"] or f"{sf['app_url']}/api/auth/salesforce/callback"
     
     # Retrieve PKCE code_verifier from store
+    _cleanup_pkce_store()  # Clean up expired entries first
     code_verifier = _pkce_store.pop(state, None)
-    logging.info(f"SF Callback: PKCE verifier found={code_verifier is not None}, state={state}, stored_states={list(_pkce_store.keys())}")
+    _pkce_timestamps.pop(state, None)
+    logging.info(f"SF Callback: PKCE verifier found={code_verifier is not None}, state={state}")
     
     try:
         async with httpx.AsyncClient() as client_http:

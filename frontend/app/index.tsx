@@ -124,7 +124,13 @@ export default function LoginScreen() {
               await navigateAfterAuth();
               return;
             } else {
-              Alert.alert('Google Login', data.detail || data.message || 'Authentication failed. Please try again.');
+              const errorDetail = data.detail || data.message || 'Authentication failed.';
+              Alert.alert(
+                'Google Login', 
+                errorDetail.includes('expired') 
+                  ? 'Your Google session expired. Please tap the Google button to try again.'
+                  : `${errorDetail}\n\nTip: If this keeps happening, try using the Sign In form with your credentials instead.`
+              );
             }
             setGoogleLoading(false);
           }
@@ -521,16 +527,15 @@ export default function LoginScreen() {
         await navigateAfterAuth();
       } else {
         // Show detailed error with hint for Salesforce auth issues
-        const errorMsg = data.message || 'Invalid credentials';
-        const hint = data.hint || '';
+        const errorMsg = data.detail || data.message || 'Invalid credentials';
         Alert.alert(
           'Login Failed', 
-          hint ? `${errorMsg}\n\n${hint}` : errorMsg
+          `${errorMsg}\n\nIf you are a Blue Box Air employee, try the "Login with Salesforce" button above for SSO login.`
         );
       }
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert('Error', 'Unable to connect to server');
+      Alert.alert('Error', 'Unable to connect to server. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
