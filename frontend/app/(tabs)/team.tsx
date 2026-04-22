@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { HelpButton, HelpModal, HELP_CONTENT } from '../../components/HelpGuide';
 import {
   View,
   Text,
@@ -77,6 +78,7 @@ interface HierarchyNode {
 
 export default function TeamScreen() {
   const [loading, setLoading] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
   const [hierarchy, setHierarchy] = useState<HierarchyNode[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
@@ -804,6 +806,8 @@ export default function TeamScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <HelpButton onPress={() => setShowHelp(true)} />
+      <HelpModal visible={showHelp} onClose={() => setShowHelp(false)} screenName={HELP_CONTENT.team.name} steps={HELP_CONTENT.team.steps} />
     </SafeAreaView>
   );
 }

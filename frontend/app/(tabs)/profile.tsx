@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { HelpButton, HelpModal, HELP_CONTENT } from '../../components/HelpGuide';
 import {
   View,
   Text,
@@ -63,6 +64,7 @@ interface Technician {
 
 export default function ProfileScreen() {
   const [technician, setTechnician] = useState<Technician | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1006,6 +1008,8 @@ export default function ProfileScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      <HelpButton onPress={() => setShowHelp(true)} />
+      <HelpModal visible={showHelp} onClose={() => setShowHelp(false)} screenName={HELP_CONTENT.profile.name} steps={HELP_CONTENT.profile.steps} />
     </SafeAreaView>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { HelpButton, HelpModal, HELP_CONTENT } from '../../components/HelpGuide';
 import {
   View,
   Text,
@@ -63,6 +64,7 @@ const LOB_FILTERS = [
 export default function ProjectsScreen() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
+  const [showHelp, setShowHelp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('All');
@@ -638,6 +640,8 @@ export default function ProjectsScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
+      <HelpButton onPress={() => setShowHelp(true)} />
+      <HelpModal visible={showHelp} onClose={() => setShowHelp(false)} screenName={HELP_CONTENT.projects.name} steps={HELP_CONTENT.projects.steps} />
     </SafeAreaView>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { HelpButton, HelpModal, HELP_CONTENT } from '../../components/HelpGuide';
 import {
   View,
   Text,
@@ -62,6 +63,7 @@ interface CoilEntry {
 
 export default function CoilOfTheMonth() {
   const [entries, setEntries] = useState<CoilEntry[]>([]);
+  const [showHelp, setShowHelp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [technician, setTechnician] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -649,6 +651,8 @@ export default function CoilOfTheMonth() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+      <HelpButton onPress={() => setShowHelp(true)} />
+      <HelpModal visible={showHelp} onClose={() => setShowHelp(false)} screenName={HELP_CONTENT.coil.name} steps={HELP_CONTENT.coil.steps} />
     </SafeAreaView>
   );
 }

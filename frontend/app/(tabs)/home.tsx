@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { HelpButton, HelpModal, HELP_CONTENT } from '../../components/HelpGuide';
 import {
   View,
   Text,
@@ -68,6 +69,7 @@ export default function HomeScreen() {
   const [stats, setStats] = useState<any>(null);
   const [coilOfMonth, setCoilOfMonth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
   const notificationListener = useRef<any>();
   const responseListener = useRef<any>();
 
@@ -556,6 +558,14 @@ export default function HomeScreen() {
           <Text style={styles.footerSub}>Coil Management Solutions</Text>
         </View>
       </ScrollView>
+
+      <HelpButton onPress={() => setShowHelp(true)} />
+      <HelpModal
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+        screenName={HELP_CONTENT.home.name}
+        steps={HELP_CONTENT.home.steps}
+      />
 
     </SafeAreaView>
   );

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { HelpButton, HelpModal, HELP_CONTENT } from '../../components/HelpGuide';
 import {
   View,
   Text,
@@ -56,6 +57,7 @@ export default function ChatScreen() {
     },
   ]);
   const [input, setInput] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
   const [sending, setSending] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const flatListRef = useRef<FlatList>(null);
@@ -287,6 +289,8 @@ export default function ChatScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+      <HelpButton onPress={() => setShowHelp(true)} />
+      <HelpModal visible={showHelp} onClose={() => setShowHelp(false)} screenName={HELP_CONTENT.chat.name} steps={HELP_CONTENT.chat.steps} />
     </SafeAreaView>
   );
 }
