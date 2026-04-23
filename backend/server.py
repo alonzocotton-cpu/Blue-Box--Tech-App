@@ -2556,7 +2556,7 @@ async def get_lines_of_business():
 
 DEFAULT_ROLES = [
     {"name": "CEO/Founder", "level": 0, "parent": None, "region": None, "color": "#f59e0b", "icon": "star"},
-    {"name": "Head of Finance", "level": 1, "parent": "CEO/Founder", "region": None, "color": "#3b82f6", "icon": "wallet"},
+    {"name": "CFO", "level": 1, "parent": "CEO/Founder", "region": None, "color": "#3b82f6", "icon": "wallet"},
     {"name": "Head of Operations", "level": 1, "parent": "CEO/Founder", "region": None, "color": "#8b5cf6", "icon": "briefcase"},
     # One Operations Manager per region
     {"name": "Operations Manager", "level": 2, "parent": "Head of Operations", "region": "New York", "color": "#3b82f6", "icon": "business"},
@@ -2571,7 +2571,7 @@ DEFAULT_ROLES = [
 # Default team members to seed
 DEFAULT_TEAM_MEMBERS = [
     {"member_name": "Jim Metropoulos", "role_name": "CEO/Founder", "region": None, "email": "", "phone": "", "level": 0, "color": "#f59e0b", "icon": "star"},
-    {"member_name": "Noah Ward", "role_name": "Head of Finance", "region": None, "email": "", "phone": "", "level": 1, "color": "#3b82f6", "icon": "wallet"},
+    {"member_name": "Noah Ward", "role_name": "CFO", "region": None, "email": "", "phone": "", "level": 1, "color": "#3b82f6", "icon": "wallet"},
     {"member_name": "Alonzo Cotton", "role_name": "Head of Operations", "region": None, "email": "alonzo.cotton@blueboxair.com", "phone": "", "level": 1, "color": "#8b5cf6", "icon": "briefcase"},
 ]
 
@@ -2628,7 +2628,7 @@ async def get_role_hierarchy():
             ceo_members = [m for m in members if m.get("role_name") == ceo["name"] and not m.get("region")]
             ceo_node = {**ceo, "members": ceo_members, "children": []}
             
-            # All level 1 roles (Head of Finance, Head of Operations, etc.)
+            # All level 1 roles (CFO, Head of Operations, etc.)
             level1_roles = [r for r in roles if r["level"] == 1]
             for l1_role in level1_roles:
                 l1_members = [m for m in members if m.get("role_name") == l1_role["name"] and not m.get("region")]
