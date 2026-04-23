@@ -28,6 +28,16 @@ import { API_BASE_URL } from '../utils/api';
 
 const API_URL = API_BASE_URL;
 
+// Capture hash/query params immediately on module load (before Expo Router clears them)
+let _capturedHash = '';
+let _capturedSearch = '';
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  _capturedHash = window.location.hash || '';
+  _capturedSearch = window.location.search || '';
+  console.log('[Google Auth] Module-load hash:', _capturedHash);
+  console.log('[Google Auth] Module-load search:', _capturedSearch);
+}
+
 // Blue Box Air colors
 const COLORS = {
   navy: '#0f2744',
@@ -93,16 +103,33 @@ export default function LoginScreen() {
   // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
   const checkGoogleCallback = async () => {
     try {
-      // On web, check URL hash for session_id from Emergent Auth redirect
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        const hash = window.location.hash;
-        if (hash && hash.includes('session_id=')) {
-          const sessionId = hash.split('session_id=')[1]?.split('&')[0];
-          if (sessionId) {
-            setGoogleLoading(true);
-            window.history.replaceState({}, '', window.location.pathname);
-            await processGoogleSession(sessionId);
-          }
+        // Use module-level captured hash/search (before Expo Router could clear them)
+        const hash = _capturedHash || window.location.hash || '';
+        const search = _capturedSearch || window.location.search || '';
+        console.log('[Google Auth] Checking callback - hash:', hash, 'search:', search);
+
+        let sessionId = '';
+
+        // Check hash fragment: #session_id=xxx
+        if (hash.includes('session_id=')) {
+          sessionId = hash.split('session_id=')[1]?.split('&')[0] || '';
+        }
+        // Also check query params: ?session_id=xxx
+        if (!sessionId && search.includes('session_id=')) {
+          sessionId = search.split('session_id=')[1]?.split('&')[0]?.split('#')[0] || '';
+        }
+
+        if (sessionId) {
+          console.log('[Google Auth] Found session_id:', sessionId.substring(0, 10) + '...');
+          setGoogleLoading(true);
+          // Clean URL
+          window.history.replaceState({}, '', window.location.pathname);
+          _capturedHash = '';
+          _capturedSearch = '';
+          await processGoogleSession(sessionId);
+        } else {
+          console.log('[Google Auth] No session_id found in callback URL');
         }
       }
       // On native, the Google callback is handled directly in handleGoogleLogin
