@@ -486,7 +486,178 @@ a:hover{text-decoration:underline;}
 
 </div></body></html>'''
     return HTMLResponse(content=html)
-# === End Privacy & Terms & Support ===
+# === Support Tickets API ===
+
+@api_router.post("/support/tickets")
+async def create_ticket(data: dict):
+    """Create a support ticket (any authenticated user)"""
+    email = data.get("email", "").strip().lower()
+    name = data.get("name", "").strip()
+    subject = data.get("subject", "").strip()
+    description = data.get("description", "").strip()
+    category = data.get("category", "general").strip()
+
+    if not email or not subject or not description:
+        raise HTTPException(status_code=400, detail="Email, subject, and description are required")
+
+    ticket = {
+        "ticket_number": f"BBA-TKT-{int(datetime.utcnow().timestamp())}",
+        "email": email,
+        "name": name,
+        "subject": subject,
+        "description": description,
+        "category": category,  # general, login, technical, account, feature_request
+        "status": "open",  # open, in_progress, resolved, closed
+        "priority": data.get("priority", "normal"),  # low, normal, high, urgent
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+        "responses": [],
+    }
+
+    result = await db.support_tickets.insert_one(ticket)
+    ticket["_id"] = str(result.inserted_id)
+    return {"success": True, "ticket": serialize_doc(ticket)}
+
+@api_router.get("/support/tickets")
+async def list_tickets(email: str = "", status: str = "", category: str = ""):
+    """List support tickets. Admins see all, regular users see only their own."""
+    query = {}
+    is_admin_user = await is_admin(email) if email else False
+
+    if not is_admin_user and email:
+        query["email"] = email.lower()
+    elif not is_admin_user and not email:
+        return {"tickets": [], "total": 0}
+
+    if status:
+        query["status"] = status
+    if category:
+        query["category"] = category
+
+    tickets = []
+    async for t in db.support_tickets.find(query).sort("created_at", -1):
+        tickets.append(serialize_doc(t))
+
+    return {"tickets": tickets, "total": len(tickets)}
+
+@api_router.get("/support/tickets/{ticket_id}")
+async def get_ticket(ticket_id: str):
+    """Get a single support ticket by ID"""
+    try:
+        ticket = await db.support_tickets.find_one({"_id": ObjectId(ticket_id)})
+    except Exception:
+        ticket = await db.support_tickets.find_one({"ticket_number": ticket_id})
+
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return {"ticket": serialize_doc(ticket)}
+
+@api_router.put("/support/tickets/{ticket_id}")
+async def update_ticket(ticket_id: str, data: dict):
+    """Update ticket status or add a response (admin only)"""
+    admin_email = data.get("admin_email", "").strip().lower()
+    if not admin_email or not await is_admin(admin_email):
+        raise HTTPException(status_code=403, detail="Only admins can update tickets")
+
+    update_fields = {"updated_at": datetime.utcnow().isoformat()}
+
+    if "status" in data:
+        update_fields["status"] = data["status"]
+
+    if "priority" in data:
+        update_fields["priority"] = data["priority"]
+
+    try:
+        oid = ObjectId(ticket_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ticket ID")
+
+    # Add admin response if provided
+    if data.get("response"):
+        response_obj = {
+            "admin_email": admin_email,
+            "admin_name": data.get("admin_name", admin_email),
+            "message": data["response"],
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        await db.support_tickets.update_one(
+            {"_id": oid},
+            {"$push": {"responses": response_obj}, "$set": update_fields}
+        )
+    else:
+        await db.support_tickets.update_one({"_id": oid}, {"$set": update_fields})
+
+    updated = await db.support_tickets.find_one({"_id": oid})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return {"success": True, "ticket": serialize_doc(updated)}
+
+@api_router.get("/support/stats")
+async def support_stats(email: str = ""):
+    """Admin support dashboard stats"""
+    if not email or not await is_admin(email):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    total = await db.support_tickets.count_documents({})
+    open_count = await db.support_tickets.count_documents({"status": "open"})
+    in_progress = await db.support_tickets.count_documents({"status": "in_progress"})
+    resolved = await db.support_tickets.count_documents({"status": "resolved"})
+    closed = await db.support_tickets.count_documents({"status": "closed"})
+
+    # Get registered user count
+    total_users = await db.salesforce_profiles.count_documents({})
+    registered_users = await db.registered_users.count_documents({})
+
+    return {
+        "tickets": {"total": total, "open": open_count, "in_progress": in_progress, "resolved": resolved, "closed": closed},
+        "users": {"salesforce_profiles": total_users, "registered_accounts": registered_users},
+    }
+
+@api_router.get("/support/users")
+async def list_all_users(email: str = ""):
+    """Admin: list all registered users and Salesforce profiles"""
+    if not email or not await is_admin(email):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    users = []
+    # Get registered users
+    async for u in db.registered_users.find().sort("created_at", -1):
+        doc = serialize_doc(u)
+        doc["account_type"] = "registered"
+        users.append(doc)
+
+    # Get Salesforce profiles
+    async for u in db.salesforce_profiles.find().sort("synced_at", -1).limit(50):
+        doc = serialize_doc(u)
+        doc["account_type"] = "salesforce"
+        users.append(doc)
+
+    return {"users": users, "total": len(users)}
+
+@api_router.put("/support/users/{user_id}/status")
+async def update_user_status(user_id: str, data: dict):
+    """Admin: activate or deactivate a user account"""
+    admin_email = data.get("admin_email", "").strip().lower()
+    if not admin_email or not await is_admin(admin_email):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    new_status = data.get("is_active", True)
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    # Try registered users first, then salesforce profiles
+    result = await db.registered_users.update_one({"_id": oid}, {"$set": {"is_active": new_status}})
+    if result.matched_count == 0:
+        result = await db.salesforce_profiles.update_one({"_id": oid}, {"$set": {"is_active": new_status}})
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"success": True, "is_active": new_status}
+
+# === End Support Tickets API ===
 
 # Helper to convert MongoDB documents
 def serialize_doc(doc):
@@ -700,6 +871,7 @@ def _cleanup_pkce_store():
 # Admin users list (seeded on startup)
 DEFAULT_ADMINS = [
     {"email": "alonzo.cotton@blueboxair.com", "name": "Alonzo Cotton", "granted_by": "system"},
+    {"email": "heather@blueboxair.com", "name": "Heather", "granted_by": "system"},
     {"email": "jim@blueboxair.com", "name": "Jim", "granted_by": "system"},
     {"email": "linh.matthews@blueboxair.com", "name": "Linh Matthews", "granted_by": "system"},
     {"email": "noah.ward@blueboxair.com", "name": "Noah Ward", "granted_by": "system"},

@@ -994,6 +994,13 @@ export default function LoginScreen() {
               <Ionicons name="shield-checkmark-outline" size={16} color={COLORS.lime} />
               <Text style={styles.mockText}>Secured with Salesforce OAuth</Text>
             </View>
+            <TouchableOpacity
+              style={styles.helpLink}
+              onPress={() => router.push('/support?from=login')}
+            >
+              <Ionicons name="help-circle-outline" size={16} color={COLORS.gray} />
+              <Text style={styles.helpLinkText}>Need help? Contact Support</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1204,6 +1211,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.lime,
     fontWeight: '500',
+  },
+  helpLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    gap: 6,
+  },
+  helpLinkText: {
+    fontSize: 13,
+    color: COLORS.gray,
+    fontWeight: '400',
   },
 });
 

@@ -975,8 +975,9 @@ export default function ProfileScreen() {
                 <View style={styles.sectionContent}>
                   <MenuItem
                     icon="help-circle-outline"
-                    title="Help Center"
-                    onPress={() => {}}
+                    title="Help & Support"
+                    subtitle="FAQ, contact support, submit tickets"
+                    onPress={() => router.push('/support')}
                     color={COLORS.white}
                   />
                   <MenuItem
@@ -988,6 +989,22 @@ export default function ProfileScreen() {
                   />
                 </View>
               </View>
+
+              {/* Admin Dashboard - only visible to admin users */}
+              {isAdmin && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>ADMINISTRATION</Text>
+                  <View style={styles.sectionContent}>
+                    <MenuItem
+                      icon="shield-checkmark"
+                      title="Admin Dashboard"
+                      subtitle="Support tickets & user management"
+                      onPress={() => router.push('/admin-dashboard')}
+                      color={COLORS.lime}
+                    />
+                  </View>
+                </View>
+              )}
 
               {/* Logout */}
               <View style={styles.logoutSection}>
