@@ -718,6 +718,30 @@ frontend:
         agent: "main"
         comment: "Signature capture with canvas, signer name input working"
 
+  - task: "Support Page"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/support.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Support page fully functional with all required elements. Header 'Support' visible, contact card with support@blueboxair.com email and phone section present, lime green 'Submit a Support Ticket' button working, 'Frequently Asked Questions' section with FAQ items displayed. Support ticket modal opens correctly with category chips (Login Issues, Technical Problem, Account Help, Feature Request, General Inquiry), subject input, description input, and submit button. All elements responsive on iPhone 14 dimensions (390x844). Navigation from login 'Need help?' link working correctly."
+
+  - task: "Admin Dashboard"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin-dashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Admin Dashboard fully operational with admin credentials (alonzo.cotton@blueboxair.com). Header displays 'Admin Dashboard' with 'Support & User Management' subtitle. Stats cards show correct data (0 Open, 1 In Progress, 0 Resolved, 6 Users) with proper color coding. Functional tabs 'Tickets (1)' and 'Users (6)' with smooth switching. Users tab includes search bar with placeholder 'Search users...' and displays user list with active status indicators (Test User, Apple Reviewer, New User, Apple Tester, etc.). Tickets tab shows existing ticket 'Login issue' with proper status and reply indicators. All admin functionality working correctly on mobile dimensions."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
@@ -767,6 +791,8 @@ agent_communication:
     message: "✅ ADMIN ACCESS CONTROL API TESTING COMPLETE: All 5 requested admin endpoints tested successfully with 100% pass rate. Key findings: 1) GET /api/admin/check?email=alonzo.cotton@blueboxair.com correctly returns {'is_admin': true, 'email': 'alonzo.cotton@blueboxair.com', 'granted_by': 'system'} - admin check working correctly. 2) GET /api/admin/check?email=random@test.com correctly returns {'is_admin': false, 'email': 'random@test.com', 'granted_by': ''} - non-admin check working correctly. 3) GET /api/admin/list returns 1 admin (alonzo.cotton@blueboxair.com) with complete admin record structure. 4) POST /api/admin/grant with admin requester (alonzo.cotton@blueboxair.com) successfully grants admin access to test@blueboxair.com - authorization working correctly. 5) POST /api/admin/grant with non-admin requester (random@test.com) correctly returns 403 'Only admins can grant admin access' - access control working properly. Admin seeding functional (alonzo.cotton@blueboxair.com seeded as system admin on startup), all CRUD operations on admin access working correctly, proper authorization checks in place."
   - agent: "main"
     message: "Completed UI de-congestion across all screens (projects, team, profile, home). Merged status+LOB filters into single row on Projects screen. Made Team hierarchy collapsible with empty roles hidden by default. Compacted Profile header, stats, and sections. Also added 'Remove Inactive Users' feature: new DELETE /api/salesforce/users/inactive backend endpoint + frontend button (admin-only) in Profile Salesforce section. Please test the new endpoint."
+  - agent: "testing"
+    message: "✅ SUPPORT & ADMIN DASHBOARD TESTING COMPLETE: All 4 requested tests passed successfully. Key findings: 1) Login Screen 'Need help?' link - WORKING: Link visible at bottom of login screen, successfully navigates to /support page. 2) Support Page (/support) - WORKING: All elements verified including 'Support' header, contact card with support@blueboxair.com email, phone section, lime green 'Submit a Support Ticket' button, and 'Frequently Asked Questions' section with FAQ items. Support ticket modal opens correctly with category chips, subject input, description input, and submit button. 3) Admin Dashboard (/admin-dashboard) - WORKING: Successfully loads with admin credentials, displays 'Admin Dashboard' header and 'Support & User Management' subtitle, shows stats cards (0 Open, 1 In Progress, 0 Resolved, 6 Users), functional 'Tickets (1)' and 'Users (6)' tabs. Users tab includes search bar and displays user list with active status indicators. 4) Submit Ticket Flow - WORKING: Successfully filled form with subject 'Test Login Issue', description 'Cannot login with my credentials', selected 'Login Issues' category. All form elements functional and responsive on iPhone 14 dimensions (390x844). Support and Admin Dashboard features fully operational for BBA Tech Expo app."
 
   - task: "Remove Inactive Salesforce Users API"
     implemented: true
@@ -1326,8 +1352,48 @@ agent_communication:
         comment: "✅ TESTED: All 7 Support Tickets API endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/support/tickets with test data {'email': 'testuser@example.com', 'name': 'Test User', 'subject': 'Login issue', 'description': 'Cannot login with Salesforce', 'category': 'login'} successfully creates ticket with ticket_number='BBA-TKT-1776902926' and returns success=true. 2) GET /api/support/tickets?email=alonzo.cotton@blueboxair.com correctly returns 1 ticket for admin user (admin sees all tickets). 3) GET /api/support/stats?email=alonzo.cotton@blueboxair.com returns correct stats: 1 total ticket, 1 open, 0 in_progress/resolved/closed, 0 SF users, 6 registered accounts. 4) PUT /api/support/tickets/{id} with admin credentials successfully updates ticket status to 'in_progress' and adds admin response 'We are looking into this.' from Alonzo Cotton. 5) GET /api/admin/check?email=heather@blueboxair.com correctly returns is_admin=true, granted_by='system' confirming Heather's admin status. 6) POST /api/auth/login regression test with demo credentials {'username': 'demo@blueboxair.com', 'password': 'BBAReview2025!'} still works correctly (returns Demo Reviewer technician data). 7) GET /api/support/tickets?email=testuser@example.com correctly returns only 1 ticket belonging to that user (non-admin access control working). All admin authorization checks functional, ticket CRUD operations working, proper access control implemented."
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Support Page from Login Screen"
+    - "In-App Support Page"
+    - "Admin Dashboard"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+frontend:
+  - task: "Support Page from Login Screen"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added 'Need help? Contact Support' link at bottom of login screen. Clicking it should navigate to /support?from=login page showing FAQ, contact info, and ticket submission form."
+
+  - task: "In-App Support Page"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/support.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New support page at /support with: contact card (email, phone), Submit a Support Ticket button (opens modal with category selection, subject, description), FAQ section with 5 questions, and My Tickets list for logged-in users."
+
+  - task: "Admin Dashboard"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/admin-dashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New admin dashboard at /admin-dashboard. Features: stats cards (Open, In Progress, Resolved, Users), Tickets tab with status filters and ticket detail modal (update status, send response), Users tab with search and activate/deactivate toggle. Only accessible to admin users. Profile screen shows Admin Dashboard link under Administration section for admin users only."
 
