@@ -14,6 +14,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.blueboxair.techapp",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Upload photos from your gallery",
         "NSCameraUsageDescription": "Capture photos for equipment documentation",
