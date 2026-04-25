@@ -22,6 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { Video, ResizeMode } from 'expo-av';
 
 import { API_BASE_URL } from '../utils/api';
@@ -71,6 +72,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [sfLoading, setSfLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -599,6 +601,68 @@ export default function LoginScreen() {
     }
   };
 
+  // === Apple Sign In ===
+  const handleAppleLogin = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Apple Sign In', 'Sign in with Apple is only available on iOS devices.');
+      return;
+    }
+
+    setAppleLoading(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      console.log('[Apple Auth] Credential received:', credential.user?.substring(0, 10));
+
+      // Exchange Apple credential with our backend
+      const response = await fetch(`${API_URL}/api/auth/apple`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apple_user_id: credential.user,
+          email: credential.email || null,
+          full_name: credential.fullName
+            ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
+            : null,
+          identity_token: credential.identityToken,
+          authorization_code: credential.authorizationCode,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        await AsyncStorage.setItem('authToken', data.token);
+        await AsyncStorage.setItem('technician', JSON.stringify(data.technician));
+        await AsyncStorage.setItem('loginSource', 'apple');
+
+        // Check if first time login for tutorial
+        const tutorialDone = await AsyncStorage.getItem('tutorialCompleted');
+        if (!tutorialDone) {
+          router.replace('/tutorial');
+        } else {
+          router.replace('/(tabs)/home');
+        }
+      } else {
+        Alert.alert('Apple Sign In', data.detail || 'Authentication failed. Please try again.');
+      }
+    } catch (error: any) {
+      if (error.code === 'ERR_REQUEST_CANCELED') {
+        console.log('[Apple Auth] User cancelled');
+      } else {
+        console.error('[Apple Auth] Error:', error);
+        Alert.alert('Apple Sign In', 'Unable to sign in with Apple. Please try again.');
+      }
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
   const handleRegister = async () => {
     if (!registerName.trim()) {
       Alert.alert('Registration', 'Please enter your full name.');
@@ -995,6 +1059,24 @@ export default function LoginScreen() {
                 </Text>
               </TouchableOpacity>
 
+              {/* Apple Sign In - shows on iOS, hidden on web/Android */}
+              {Platform.OS === 'ios' ? (
+                <TouchableOpacity 
+                  style={[styles.socialButton, styles.appleButton]}
+                  onPress={handleAppleLogin}
+                  disabled={appleLoading}
+                >
+                  {appleLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="logo-apple" size={22} color="#fff" />
+                  )}
+                  <Text style={[styles.socialButtonText, { color: '#fff' }]}>
+                    {appleLoading ? 'Signing in...' : 'Apple'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
               {/* Face ID / Touch ID - always show on supported platforms */}
               {(biometricAvailable || Platform.OS === 'ios' || Platform.OS === 'android') && (
                 <TouchableOpacity 
@@ -1249,6 +1331,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.gray,
     fontWeight: '400',
+  },
+  appleButton: {
+    backgroundColor: '#000000',
+    borderColor: '#333333',
   },
 });
 

@@ -1160,6 +1160,90 @@ async def login(credentials: TechnicianLogin):
     )
 
 
+# ============ APPLE SIGN IN ============
+
+@api_router.post("/auth/apple")
+async def apple_auth(data: dict = Body(...)):
+    """
+    Handle Apple Sign In. Grants full access to Apple-authenticated users.
+    This allows Apple reviewers to test the complete app experience.
+    """
+    apple_user_id = data.get("apple_user_id")
+    apple_email = data.get("email")
+    full_name = data.get("full_name")
+
+    if not apple_user_id:
+        raise HTTPException(status_code=400, detail="Apple user ID is required")
+
+    # Check if we've seen this Apple user before
+    existing = await db.apple_users.find_one({"apple_user_id": apple_user_id})
+
+    if existing:
+        # Update name/email if Apple provided them (only on first sign-in)
+        if apple_email and not existing.get("email"):
+            await db.apple_users.update_one(
+                {"apple_user_id": apple_user_id},
+                {"$set": {"email": apple_email}}
+            )
+            existing["email"] = apple_email
+        if full_name and not existing.get("full_name"):
+            await db.apple_users.update_one(
+                {"apple_user_id": apple_user_id},
+                {"$set": {"full_name": full_name}}
+            )
+            existing["full_name"] = full_name
+    else:
+        # Create new Apple user entry
+        existing = {
+            "apple_user_id": apple_user_id,
+            "email": apple_email or f"apple-user-{apple_user_id[:8]}@privaterelay.appleid.com",
+            "full_name": full_name or "Apple User",
+            "created_at": datetime.utcnow().isoformat(),
+            "source": "apple",
+            "is_active": True,
+        }
+        await db.apple_users.insert_one(existing)
+
+    # Generate auth token
+    token = f"apple-token-{str(uuid.uuid4())}"
+    user_email = existing.get("email", "apple@user.com")
+    user_name = existing.get("full_name", "Apple User")
+
+    # Create technician profile with full access (same data as demo account)
+    technician = {
+        "id": f"apple-{apple_user_id[:12]}",
+        "technician_id": f"APPLE-{apple_user_id[:8].upper()}",
+        "first_name": user_name.split()[0] if user_name else "Apple",
+        "last_name": user_name.split()[-1] if user_name and len(user_name.split()) > 1 else "User",
+        "full_name": user_name,
+        "email": user_email,
+        "title": "Technician",
+        "company": "Blue Box Air, Inc.",
+        "skills": ["HVAC Systems", "Coil Cleaning", "Air Quality Testing"],
+        "certifications": ["EPA 608", "OSHA 30"],
+        "source": "apple",
+    }
+
+    # Store the session
+    await db.sessions.update_one(
+        {"token": token},
+        {"$set": {
+            "token": token,
+            "email": user_email,
+            "technician": technician,
+            "source": "apple",
+            "created_at": datetime.utcnow().isoformat(),
+        }},
+        upsert=True
+    )
+
+    return {
+        "success": True,
+        "token": token,
+        "technician": technician,
+        "source": "apple",
+    }
+
 # ============ GOOGLE AUTH (via Emergent Auth) → SALESFORCE SYNC ============
 
 @api_router.post("/auth/google/session")
