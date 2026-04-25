@@ -793,6 +793,8 @@ agent_communication:
     message: "Completed UI de-congestion across all screens (projects, team, profile, home). Merged status+LOB filters into single row on Projects screen. Made Team hierarchy collapsible with empty roles hidden by default. Compacted Profile header, stats, and sections. Also added 'Remove Inactive Users' feature: new DELETE /api/salesforce/users/inactive backend endpoint + frontend button (admin-only) in Profile Salesforce section. Please test the new endpoint."
   - agent: "testing"
     message: "✅ SUPPORT & ADMIN DASHBOARD TESTING COMPLETE: All 4 requested tests passed successfully. Key findings: 1) Login Screen 'Need help?' link - WORKING: Link visible at bottom of login screen, successfully navigates to /support page. 2) Support Page (/support) - WORKING: All elements verified including 'Support' header, contact card with support@blueboxair.com email, phone section, lime green 'Submit a Support Ticket' button, and 'Frequently Asked Questions' section with FAQ items. Support ticket modal opens correctly with category chips, subject input, description input, and submit button. 3) Admin Dashboard (/admin-dashboard) - WORKING: Successfully loads with admin credentials, displays 'Admin Dashboard' header and 'Support & User Management' subtitle, shows stats cards (0 Open, 1 In Progress, 0 Resolved, 6 Users), functional 'Tickets (1)' and 'Users (6)' tabs. Users tab includes search bar and displays user list with active status indicators. 4) Submit Ticket Flow - WORKING: Successfully filled form with subject 'Test Login Issue', description 'Cannot login with my credentials', selected 'Login Issues' category. All form elements functional and responsive on iPhone 14 dimensions (390x844). Support and Admin Dashboard features fully operational for BBA Tech Expo app."
+  - agent: "testing"
+    message: "✅ SIGNATURE CAPTURE & TIME TRACKING API TESTING COMPLETE: All 11 requested endpoints tested successfully with 100% pass rate. Key findings: 1) POST /api/signatures with test data (project_id: test-proj-1, technician: John Doe, base64 signature) successfully creates signature and returns signature_id. 2) GET /api/signatures/test-proj-1 returns signatures array with 1 signature containing technician_name John Doe. 3) DELETE /api/signatures/{signature_id} successfully removes signature. 4) POST /api/time-entries with test data (project_id: test-proj-1, technician: John Doe) successfully creates time entry with status 'active' and clock_in timestamp. 5) GET /api/time-entries/test-proj-1 returns entries array, total_minutes=0, total_hours=0 (before clock out). 6) PUT /api/time-entries/{entry_id} with clock_out timestamp successfully calculates duration_minutes=120.0 and sets status='completed'. 7) DELETE /api/time-entries/{entry_id} successfully removes time entry. 8) GET /api/projects returns correct structure with projects array and total=7. 9) GET /api/projects/69d42c46ed575b4fa15b3265 returns detailed project with equipment (AHU-01, RTU-02) and readings (differential pressure, airflow). 10) Error handling working: POST /signatures with missing signature_data returns 400. 11) Error handling working: POST /time-entries with missing project_id returns 400. All new signature capture and time tracking features fully functional with proper CRUD operations, duration calculations, and error handling."
 
   - task: "Remove Inactive Salesforce Users API"
     implemented: true
@@ -1015,6 +1017,42 @@ agent_communication:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: GET /api/privacy-policy returns 200 with HTML content as expected. Privacy policy page working correctly, no regressions detected."
+
+  - task: "Signature Capture APIs"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: All 3 signature capture endpoints working perfectly. POST /api/signatures with test data (project_id: test-proj-1, technician: John Doe, base64 signature, notes: Service sign-off) successfully creates signature and returns signature_id. GET /api/signatures/test-proj-1 returns signatures array with 1 signature containing technician_name John Doe. DELETE /api/signatures/{signature_id} successfully removes signature. Error handling working: POST with missing signature_data returns 400. All CRUD operations functional."
+
+  - task: "Time Tracking APIs"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: All 4 time tracking endpoints working perfectly. POST /api/time-entries with test data (project_id: test-proj-1, technician: John Doe) successfully creates time entry with status 'active' and clock_in timestamp. GET /api/time-entries/test-proj-1 returns entries array, total_minutes=0, total_hours=0 (before clock out). PUT /api/time-entries/{entry_id} with clock_out timestamp successfully calculates duration_minutes=120.0 and sets status='completed'. DELETE /api/time-entries/{entry_id} successfully removes time entry. Duration calculation working correctly. Error handling working: POST with missing project_id returns 400."
+
+  - task: "Projects API Regression"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Both project endpoints working correctly. GET /api/projects returns correct structure with projects array and total=7. GET /api/projects/69d42c46ed575b4fa15b3265 returns detailed project (Test Project) with equipment array (AHU-01 Roof Unit, RTU-02 West Wing), readings array (8 readings with differential pressure and airflow data), photos array, and service_logs array. Recent fix verification successful - specific project endpoint working as expected."
 
   - task: "Face ID Login"
     implemented: false

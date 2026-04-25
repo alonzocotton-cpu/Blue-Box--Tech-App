@@ -26,8 +26,112 @@ import { writeAsStringAsync, EncodingType, cacheDirectory } from 'expo-file-syst
 import { format } from 'date-fns';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import SignatureScreen from 'react-native-signature-canvas';
 
 import { API_BASE_URL } from '../../utils/api';
+
+// Web-compatible signature pad component
+const WebSignaturePad = React.forwardRef((_props: { onSave: (data: string) => void }, ref: any) => {
+  const canvasRef = React.useRef<any>(null);
+  const isDrawingRef = React.useRef(false);
+  const lastPointRef = React.useRef<{ x: number; y: number } | null>(null);
+
+  React.useImperativeHandle(ref, () => ({
+    clear: () => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+    },
+    save: () => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const dataUrl = canvas.toDataURL('image/png');
+        _props.onSave(dataUrl);
+      }
+    },
+  }));
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    canvas.width = canvas.offsetWidth * 2;
+    canvas.height = canvas.offsetHeight * 2;
+    ctx.scale(2, 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#0f2744';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const getPos = (e: any) => {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    };
+
+    const startDraw = (e: any) => {
+      e.preventDefault();
+      isDrawingRef.current = true;
+      lastPointRef.current = getPos(e);
+    };
+    const draw = (e: any) => {
+      e.preventDefault();
+      if (!isDrawingRef.current || !lastPointRef.current) return;
+      const pos = getPos(e);
+      ctx.beginPath();
+      ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      lastPointRef.current = pos;
+    };
+    const endDraw = (e: any) => {
+      e.preventDefault();
+      isDrawingRef.current = false;
+      lastPointRef.current = null;
+    };
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', endDraw);
+    canvas.addEventListener('mouseleave', endDraw);
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', endDraw);
+
+    return () => {
+      canvas.removeEventListener('mousedown', startDraw);
+      canvas.removeEventListener('mousemove', draw);
+      canvas.removeEventListener('mouseup', endDraw);
+      canvas.removeEventListener('mouseleave', endDraw);
+      canvas.removeEventListener('touchstart', startDraw);
+      canvas.removeEventListener('touchmove', draw);
+      canvas.removeEventListener('touchend', endDraw);
+    };
+  }, []);
+
+  if (Platform.OS !== 'web') return null;
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        width: '100%',
+        height: '100%',
+        borderRadius: 8,
+        cursor: 'crosshair',
+        touchAction: 'none',
+      }}
+    />
+  );
+});
 
 const API_URL = API_BASE_URL;
 
@@ -103,6 +207,22 @@ export default function ProjectDetailScreen() {
   const [searchingTechs, setSearchingTechs] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState('');
+  const [currentUserName, setCurrentUserName] = useState('');
+
+  // Signature state
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [signatures, setSignatures] = useState<any[]>([]);
+  const [signatureNotes, setSignatureNotes] = useState('');
+  const [signatureSaving, setSignatureSaving] = useState(false);
+  const signatureRef = React.useRef<any>(null);
+
+  // Time tracking state
+  const [timeEntries, setTimeEntries] = useState<any[]>([]);
+  const [timeTotals, setTimeTotals] = useState({ total_minutes: 0, total_hours: 0 });
+  const [activeTimer, setActiveTimer] = useState<any>(null);
+  const [timerElapsed, setTimerElapsed] = useState(0);
+  const [timeNotes, setTimeNotes] = useState('');
+  const [showTimeNoteModal, setShowTimeNoteModal] = useState(false);
 
   const fetchDetails = async () => {
     try {
@@ -121,7 +241,24 @@ export default function ProjectDetailScreen() {
     fetchDetails();
     loadUserContext();
     fetchAssignedTechs();
+    fetchSignatures();
+    fetchTimeEntries();
   }, [id]);
+
+  // Timer interval for active time entry
+  useEffect(() => {
+    let interval: any;
+    if (activeTimer) {
+      interval = setInterval(() => {
+        const start = new Date(activeTimer.clock_in).getTime();
+        const now = Date.now();
+        setTimerElapsed(Math.floor((now - start) / 1000));
+      }, 1000);
+    } else {
+      setTimerElapsed(0);
+    }
+    return () => clearInterval(interval);
+  }, [activeTimer]);
 
   const loadUserContext = async () => {
     try {
@@ -130,6 +267,7 @@ export default function ProjectDetailScreen() {
         const tech = JSON.parse(techStr);
         const email = tech.email || '';
         setCurrentUserEmail(email);
+        setCurrentUserName(tech.full_name || tech.first_name || 'Technician');
         const adminRes = await fetch(`${API_URL}/api/admin/check?email=${encodeURIComponent(email)}`);
         const adminData = await adminRes.json();
         setIsAdmin(adminData.is_admin || false);
@@ -262,6 +400,160 @@ export default function ProjectDetailScreen() {
         },
       },
     ]);
+  };
+
+  // ============ Signature Functions ============
+  const fetchSignatures = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/signatures/${id}`);
+      const data = await response.json();
+      setSignatures(data.signatures || []);
+    } catch (error) {
+      console.error('Error fetching signatures:', error);
+    }
+  };
+
+  const saveSignature = async (signatureBase64: string) => {
+    setSignatureSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/api/signatures`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: id,
+          technician_name: currentUserName,
+          technician_email: currentUserEmail,
+          signature_data: signatureBase64,
+          notes: signatureNotes,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        Alert.alert('Success', 'Signature saved successfully');
+        setShowSignatureModal(false);
+        setSignatureNotes('');
+        fetchSignatures();
+      } else {
+        Alert.alert('Error', data.detail || 'Failed to save signature');
+      }
+    } catch (error) {
+      console.error('Signature save error:', error);
+      Alert.alert('Error', 'Failed to save signature');
+    } finally {
+      setSignatureSaving(false);
+    }
+  };
+
+  const deleteSignature = (sig: any) => {
+    Alert.alert('Delete Signature', 'Are you sure you want to delete this signature?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await fetch(`${API_URL}/api/signatures/${sig.id}`, { method: 'DELETE' });
+            fetchSignatures();
+          } catch (error) {
+            Alert.alert('Error', 'Failed to delete signature');
+          }
+        },
+      },
+    ]);
+  };
+
+  // ============ Time Tracking Functions ============
+  const fetchTimeEntries = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/time-entries/${id}`);
+      const data = await response.json();
+      setTimeEntries(data.entries || []);
+      setTimeTotals({ total_minutes: data.total_minutes || 0, total_hours: data.total_hours || 0 });
+      // Check for active timer
+      const active = (data.entries || []).find((e: any) => e.status === 'active');
+      setActiveTimer(active || null);
+    } catch (error) {
+      console.error('Error fetching time entries:', error);
+    }
+  };
+
+  const clockIn = async () => {
+    if (activeTimer) {
+      Alert.alert('Already Clocked In', 'You already have an active timer. Please clock out first.');
+      return;
+    }
+    try {
+      const response = await fetch(`${API_URL}/api/time-entries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: id,
+          technician_name: currentUserName,
+          technician_email: currentUserEmail,
+          notes: '',
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setActiveTimer(data.entry);
+        fetchTimeEntries();
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to clock in');
+    }
+  };
+
+  const clockOut = async () => {
+    if (!activeTimer) return;
+    try {
+      const response = await fetch(`${API_URL}/api/time-entries/${activeTimer.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clock_out: new Date().toISOString(),
+          notes: timeNotes || activeTimer.notes,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setActiveTimer(null);
+        setTimerElapsed(0);
+        setTimeNotes('');
+        setShowTimeNoteModal(false);
+        fetchTimeEntries();
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to clock out');
+    }
+  };
+
+  const deleteTimeEntry = (entry: any) => {
+    Alert.alert('Delete Time Entry', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await fetch(`${API_URL}/api/time-entries/${entry.id}`, { method: 'DELETE' });
+            if (activeTimer?.id === entry.id) {
+              setActiveTimer(null);
+              setTimerElapsed(0);
+            }
+            fetchTimeEntries();
+          } catch (error) {
+            Alert.alert('Error', 'Failed to delete time entry');
+          }
+        },
+      },
+    ]);
+  };
+
+  const formatDuration = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   const fetchReport = async () => {
@@ -1106,7 +1398,7 @@ export default function ProjectDetailScreen() {
 
         {/* Tabs */}
         <View style={styles.tabsContainer}>
-          {['report', 'equipment', 'service', 'photos'].map((tab) => (
+          {['report', 'equipment', 'service', 'time', 'sign', 'photos'].map((tab) => (
             <TouchableOpacity
               key={tab}
               style={[styles.tab, activeTab === tab && styles.tabActive]}
@@ -1120,8 +1412,27 @@ export default function ProjectDetailScreen() {
                   style={{ marginRight: 4 }}
                 />
               )}
+              {tab === 'time' && (
+                <Ionicons 
+                  name="time" 
+                  size={16} 
+                  color={activeTab === tab ? COLORS.navy : COLORS.gray} 
+                  style={{ marginRight: 4 }}
+                />
+              )}
+              {tab === 'sign' && (
+                <Ionicons 
+                  name="create" 
+                  size={16} 
+                  color={activeTab === tab ? COLORS.navy : COLORS.gray} 
+                  style={{ marginRight: 4 }}
+                />
+              )}
               <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                {tab === 'report' ? 'Report' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'report' ? 'Report' 
+                  : tab === 'time' ? 'Time' 
+                  : tab === 'sign' ? 'Sign' 
+                  : tab.charAt(0).toUpperCase() + tab.slice(1)}
               </Text>
             </TouchableOpacity>
           ))}
@@ -1668,6 +1979,174 @@ export default function ProjectDetailScreen() {
           </View>
         )}
 
+        {/* Time Tracking Tab */}
+        {activeTab === 'time' && (
+          <View style={styles.tabContent}>
+            {/* Active Timer / Clock In-Out */}
+            <View style={ttStyles.timerCard}>
+              {activeTimer ? (
+                <>
+                  <View style={ttStyles.timerActive}>
+                    <View style={ttStyles.timerDot} />
+                    <Text style={ttStyles.timerLabel}>Active Timer</Text>
+                  </View>
+                  <Text style={ttStyles.timerDisplay}>{formatDuration(timerElapsed)}</Text>
+                  <Text style={ttStyles.timerStarted}>
+                    Started: {new Date(activeTimer.clock_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                  <TouchableOpacity
+                    style={ttStyles.clockOutBtn}
+                    onPress={() => setShowTimeNoteModal(true)}
+                  >
+                    <Ionicons name="stop-circle" size={22} color="#fff" />
+                    <Text style={ttStyles.clockOutText}>Clock Out</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <View style={ttStyles.timerInactive}>
+                    <Ionicons name="time-outline" size={32} color={COLORS.lime} />
+                    <Text style={ttStyles.timerInactiveText}>Not clocked in</Text>
+                  </View>
+                  <TouchableOpacity style={ttStyles.clockInBtn} onPress={clockIn}>
+                    <Ionicons name="play-circle" size={22} color={COLORS.navy} />
+                    <Text style={ttStyles.clockInText}>Clock In</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+
+            {/* Totals Summary */}
+            {timeTotals.total_minutes > 0 && (
+              <View style={ttStyles.totalsRow}>
+                <View style={ttStyles.totalItem}>
+                  <Text style={ttStyles.totalValue}>{timeTotals.total_hours}h</Text>
+                  <Text style={ttStyles.totalLabel}>Total Hours</Text>
+                </View>
+                <View style={ttStyles.totalItem}>
+                  <Text style={ttStyles.totalValue}>{timeEntries.length}</Text>
+                  <Text style={ttStyles.totalLabel}>Entries</Text>
+                </View>
+                <View style={ttStyles.totalItem}>
+                  <Text style={ttStyles.totalValue}>
+                    {timeEntries.filter(e => e.status === 'completed').length}
+                  </Text>
+                  <Text style={ttStyles.totalLabel}>Completed</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Time Entry History */}
+            <Text style={ttStyles.sectionTitle}>Time Log</Text>
+            {timeEntries.length > 0 ? (
+              timeEntries.map((entry: any) => (
+                <View key={entry.id} style={ttStyles.entryCard}>
+                  <View style={ttStyles.entryHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={[
+                        ttStyles.statusDot,
+                        { backgroundColor: entry.status === 'active' ? COLORS.green : COLORS.grayDark }
+                      ]} />
+                      <Text style={ttStyles.entryName}>{entry.technician_name}</Text>
+                    </View>
+                    {entry.duration_minutes && (
+                      <Text style={ttStyles.entryDuration}>
+                        {entry.duration_minutes >= 60
+                          ? `${Math.floor(entry.duration_minutes / 60)}h ${Math.round(entry.duration_minutes % 60)}m`
+                          : `${Math.round(entry.duration_minutes)}m`
+                        }
+                      </Text>
+                    )}
+                  </View>
+                  <View style={ttStyles.entryTimes}>
+                    <Text style={ttStyles.entryTime}>
+                      In: {new Date(entry.clock_in).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                    {entry.clock_out && (
+                      <Text style={ttStyles.entryTime}>
+                        Out: {new Date(entry.clock_out).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    )}
+                  </View>
+                  {entry.notes ? (
+                    <Text style={ttStyles.entryNotes}>{entry.notes}</Text>
+                  ) : null}
+                  <TouchableOpacity
+                    style={ttStyles.deleteBtn}
+                    onPress={() => deleteTimeEntry(entry)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={COLORS.red} />
+                  </TouchableOpacity>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="time-outline" size={40} color={COLORS.grayDark} />
+                <Text style={styles.emptyText}>No time entries yet</Text>
+                <Text style={styles.emptyText}>Tap Clock In to start tracking</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Signature Tab */}
+        {activeTab === 'sign' && (
+          <View style={styles.tabContent}>
+            {/* Add Signature Button */}
+            <TouchableOpacity
+              style={sigStyles.addSignatureBtn}
+              onPress={() => setShowSignatureModal(true)}
+            >
+              <Ionicons name="create-outline" size={22} color={COLORS.navy} />
+              <Text style={sigStyles.addSignatureBtnText}>Capture Signature</Text>
+            </TouchableOpacity>
+
+            {/* Saved Signatures */}
+            {signatures.length > 0 ? (
+              signatures.map((sig: any) => (
+                <View key={sig.id} style={sigStyles.signatureCard}>
+                  <View style={sigStyles.signatureHeader}>
+                    <View>
+                      <Text style={sigStyles.signatureName}>{sig.technician_name}</Text>
+                      <Text style={sigStyles.signatureDate}>
+                        {new Date(sig.created_at).toLocaleString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => deleteSignature(sig)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={COLORS.red} />
+                    </TouchableOpacity>
+                  </View>
+                  {sig.signature_data && (
+                    <View style={sigStyles.signaturePreview}>
+                      <Image
+                        source={{ uri: sig.signature_data }}
+                        style={sigStyles.signatureImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  )}
+                  {sig.notes ? (
+                    <Text style={sigStyles.signatureNotes}>{sig.notes}</Text>
+                  ) : null}
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="create-outline" size={40} color={COLORS.grayDark} />
+                <Text style={styles.emptyText}>No signatures yet</Text>
+                <Text style={styles.emptyText}>Capture a service sign-off signature</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -1945,6 +2424,133 @@ export default function ProjectDetailScreen() {
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Signature Capture Modal */}
+      <Modal visible={showSignatureModal} transparent animationType="slide">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalContent, { maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Service Sign-Off</Text>
+              <TouchableOpacity onPress={() => {
+                setShowSignatureModal(false);
+                setSignatureNotes('');
+              }}>
+                <Ionicons name="close" size={24} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ color: COLORS.gray, fontSize: 13, marginBottom: 8 }}>
+              Draw your signature below
+            </Text>
+
+            <View style={sigStyles.canvasContainer}>
+              {Platform.OS === 'web' ? (
+                <View style={sigStyles.webSignatureArea}>
+                  <WebSignaturePad
+                    ref={signatureRef}
+                    onSave={saveSignature}
+                  />
+                </View>
+              ) : (
+                <SignatureScreen
+                  ref={signatureRef}
+                  onOK={(signature: string) => saveSignature(signature)}
+                  onEmpty={() => Alert.alert('Please sign', 'Signature cannot be empty')}
+                  descriptionText=""
+                  clearText="Clear"
+                  confirmText="Save"
+                  webStyle={`
+                    .m-signature-pad { box-shadow: none; border: none; }
+                    .m-signature-pad--body { border: none; }
+                    .m-signature-pad--footer { display: none; margin: 0; }
+                    body,html { width: 100%; height: 100%; }
+                  `}
+                  autoClear={false}
+                  imageType="image/png"
+                  backgroundColor="rgba(255,255,255,1)"
+                  penColor="#0f2744"
+                  dotSize={2}
+                  minWidth={1.5}
+                  maxWidth={3}
+                  style={{ flex: 1 }}
+                />
+              )}
+            </View>
+
+            <TextInput
+              style={[styles.modalInput, { marginTop: 12 }]}
+              placeholder="Notes (optional)"
+              placeholderTextColor={COLORS.grayDark}
+              value={signatureNotes}
+              onChangeText={setSignatureNotes}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                style={[sigStyles.actionBtn, { flex: 1, backgroundColor: COLORS.navyMid }]}
+                onPress={() => {
+                  if (Platform.OS === 'web') {
+                    signatureRef.current?.clear();
+                  } else {
+                    signatureRef.current?.clearSignature();
+                  }
+                }}
+              >
+                <Text style={{ color: COLORS.white, fontWeight: '600', textAlign: 'center' }}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[sigStyles.actionBtn, { flex: 2 }]}
+                onPress={() => {
+                  if (signatureSaving) return;
+                  if (Platform.OS === 'web') {
+                    signatureRef.current?.save();
+                  } else {
+                    signatureRef.current?.readSignature();
+                  }
+                }}
+                disabled={signatureSaving}
+              >
+                {signatureSaving ? (
+                  <ActivityIndicator size="small" color={COLORS.navy} />
+                ) : (
+                  <Text style={{ color: COLORS.navy, fontWeight: '700', textAlign: 'center' }}>Save Signature</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Clock Out Note Modal */}
+      <Modal visible={showTimeNoteModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: 300 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Clock Out</Text>
+              <TouchableOpacity onPress={() => setShowTimeNoteModal(false)}>
+                <Ionicons name="close" size={24} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={[styles.modalInput, styles.modalTextArea]}
+              placeholder="Add notes about work performed (optional)"
+              placeholderTextColor={COLORS.grayDark}
+              value={timeNotes}
+              onChangeText={setTimeNotes}
+              multiline
+              numberOfLines={3}
+            />
+
+            <TouchableOpacity style={styles.submitButton} onPress={clockOut}>
+              <Text style={styles.submitButtonText}>Confirm Clock Out</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -3142,5 +3748,246 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.grayDark,
     marginTop: 2,
+  },
+});
+
+// Time Tracking Styles
+const ttStyles = StyleSheet.create({
+  timerCard: {
+    backgroundColor: COLORS.navyLight,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  timerActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  timerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLORS.green,
+  },
+  timerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.green,
+  },
+  timerDisplay: {
+    fontSize: 42,
+    fontWeight: '700',
+    color: COLORS.lime,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 2,
+  },
+  timerStarted: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  clockOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.red,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    gap: 8,
+  },
+  clockOutText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  timerInactive: {
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  timerInactiveText: {
+    fontSize: 15,
+    color: COLORS.gray,
+  },
+  clockInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.lime,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    gap: 8,
+  },
+  clockInText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.navy,
+  },
+  totalsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  totalItem: {
+    flex: 1,
+    backgroundColor: COLORS.navyLight,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  totalValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.lime,
+  },
+  totalLabel: {
+    fontSize: 11,
+    color: COLORS.gray,
+    marginTop: 4,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.white,
+    marginBottom: 12,
+  },
+  entryCard: {
+    backgroundColor: COLORS.navyLight,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+    position: 'relative' as const,
+  },
+  entryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  entryName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
+  entryDuration: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.lime,
+  },
+  entryTimes: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 4,
+  },
+  entryTime: {
+    fontSize: 12,
+    color: COLORS.gray,
+  },
+  entryNotes: {
+    fontSize: 12,
+    color: COLORS.grayDark,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  deleteBtn: {
+    position: 'absolute' as const,
+    bottom: 10,
+    right: 10,
+    padding: 4,
+  },
+});
+
+// Signature Styles
+const sigStyles = StyleSheet.create({
+  addSignatureBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.lime,
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+    marginBottom: 16,
+  },
+  addSignatureBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.navy,
+  },
+  signatureCard: {
+    backgroundColor: COLORS.navyLight,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  signatureHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  signatureName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
+  signatureDate: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
+  },
+  signaturePreview: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 8,
+    height: 100,
+    marginBottom: 8,
+  },
+  signatureImage: {
+    width: '100%',
+    height: '100%',
+  },
+  signatureNotes: {
+    fontSize: 12,
+    color: COLORS.grayDark,
+    fontStyle: 'italic',
+  },
+  canvasContainer: {
+    height: 200,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: COLORS.lime + '40',
+  },
+  webSignatureArea: {
+    flex: 1,
+  },
+  actionBtn: {
+    backgroundColor: COLORS.lime,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
   },
 });

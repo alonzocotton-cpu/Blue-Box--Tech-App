@@ -3376,6 +3376,12 @@ async def get_project(project_id: str):
     # Check in custom projects first
     try:
         custom = await db.custom_projects.find_one({"id": project_id})
+        if not custom:
+            # Also try by _id (ObjectId)
+            try:
+                custom = await db.custom_projects.find_one({"_id": ObjectId(project_id)})
+            except Exception:
+                pass
         if custom:
             custom["id"] = str(custom.get("_id", project_id))
             custom.pop("_id", None)
@@ -3605,6 +3611,151 @@ async def get_service_logs(project_id: str):
     """Get all service logs for a project"""
     logs = await db.service_logs.find({"project_id": project_id}).sort("created_at", -1).to_list(100)
     return {"service_logs": serialize_doc(logs)}
+
+# ============ Signature Capture ============
+
+@api_router.post("/signatures")
+async def save_signature(data: dict = Body(...)):
+    """Save a technician signature for a project service sign-off"""
+    project_id = data.get("project_id")
+    technician_name = data.get("technician_name", "Unknown")
+    technician_email = data.get("technician_email", "")
+    signature_data = data.get("signature_data")  # base64 PNG
+    notes = data.get("notes", "")
+
+    if not project_id or not signature_data:
+        raise HTTPException(status_code=400, detail="project_id and signature_data are required")
+
+    signature_doc = {
+        "id": str(uuid.uuid4()),
+        "project_id": project_id,
+        "technician_name": technician_name,
+        "technician_email": technician_email,
+        "signature_data": signature_data,
+        "notes": notes,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    await db.signatures.insert_one(signature_doc)
+
+    return {"success": True, "signature_id": signature_doc["id"]}
+
+
+@api_router.get("/signatures/{project_id}")
+async def get_signatures(project_id: str):
+    """Get all signatures for a project"""
+    sigs = await db.signatures.find({"project_id": project_id}).sort("created_at", -1).to_list(50)
+    # Don't return the full base64 data in list view for performance
+    result = []
+    for s in sigs:
+        s.pop("_id", None)
+        result.append(s)
+    return {"signatures": result}
+
+
+@api_router.delete("/signatures/{signature_id}")
+async def delete_signature(signature_id: str):
+    """Delete a signature"""
+    result = await db.signatures.delete_one({"id": signature_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    return {"success": True}
+
+
+# ============ Time Tracking ============
+
+@api_router.post("/time-entries")
+async def create_time_entry(data: dict = Body(...)):
+    """Create a time entry (clock in) for a project"""
+    project_id = data.get("project_id")
+    technician_name = data.get("technician_name", "Unknown")
+    technician_email = data.get("technician_email", "")
+    notes = data.get("notes", "")
+    clock_in = data.get("clock_in")  # ISO string or None for now
+
+    if not project_id:
+        raise HTTPException(status_code=400, detail="project_id is required")
+
+    entry = {
+        "id": str(uuid.uuid4()),
+        "project_id": project_id,
+        "technician_name": technician_name,
+        "technician_email": technician_email,
+        "clock_in": clock_in or datetime.utcnow().isoformat(),
+        "clock_out": None,
+        "duration_minutes": None,
+        "notes": notes,
+        "status": "active",  # active or completed
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    await db.time_entries.insert_one(entry)
+
+    return {"success": True, "entry": {k: v for k, v in entry.items() if k != "_id"}}
+
+
+@api_router.put("/time-entries/{entry_id}")
+async def update_time_entry(entry_id: str, data: dict = Body(...)):
+    """Update a time entry (clock out or edit notes)"""
+    entry = await db.time_entries.find_one({"id": entry_id})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Time entry not found")
+
+    update_fields = {}
+
+    # Clock out
+    clock_out = data.get("clock_out")
+    if clock_out:
+        update_fields["clock_out"] = clock_out
+        update_fields["status"] = "completed"
+        # Calculate duration
+        try:
+            cin = datetime.fromisoformat(entry["clock_in"].replace("Z", "+00:00").replace("+00:00", ""))
+            cout = datetime.fromisoformat(clock_out.replace("Z", "+00:00").replace("+00:00", ""))
+            duration = (cout - cin).total_seconds() / 60
+            update_fields["duration_minutes"] = round(duration, 1)
+        except Exception as e:
+            logging.warning(f"Duration calc error: {e}")
+
+    # Update notes
+    if "notes" in data:
+        update_fields["notes"] = data["notes"]
+
+    if update_fields:
+        await db.time_entries.update_one({"id": entry_id}, {"$set": update_fields})
+
+    updated = await db.time_entries.find_one({"id": entry_id})
+    updated.pop("_id", None)
+    return {"success": True, "entry": updated}
+
+
+@api_router.get("/time-entries/{project_id}")
+async def get_time_entries(project_id: str):
+    """Get all time entries for a project"""
+    entries = await db.time_entries.find({"project_id": project_id}).sort("created_at", -1).to_list(100)
+    result = []
+    total_minutes = 0
+    for e in entries:
+        e.pop("_id", None)
+        if e.get("duration_minutes"):
+            total_minutes += e["duration_minutes"]
+        result.append(e)
+
+    return {
+        "entries": result,
+        "total_minutes": round(total_minutes, 1),
+        "total_hours": round(total_minutes / 60, 2) if total_minutes > 0 else 0,
+    }
+
+
+@api_router.delete("/time-entries/{entry_id}")
+async def delete_time_entry(entry_id: str):
+    """Delete a time entry"""
+    # Check if it looks like a project_id (prevent confusion with GET)
+    entry = await db.time_entries.find_one({"id": entry_id})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Time entry not found")
+    await db.time_entries.delete_one({"id": entry_id})
+    return {"success": True}
+
 
 # ============ Claude AI Integration ============
 
