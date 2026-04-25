@@ -51,6 +51,7 @@ interface Project {
   line_of_business?: string;
   lob_name?: string;
   lob_color?: string;
+  source?: string;
 }
 
 const STATUS_FILTERS = ['All', 'Active', 'Completed'];
@@ -333,7 +334,7 @@ export default function ProjectsScreen() {
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               {/* Kanban Board Button */}
               <TouchableOpacity 
-                style={[styles.addButton, { backgroundColor: COLORS.inProgress }]}
+                style={[styles.addButton, { backgroundColor: '#f59e0b' }]}
                 onPress={() => router.push('/kanban')}
               >
                 <Ionicons name="grid" size={20} color="#fff" />

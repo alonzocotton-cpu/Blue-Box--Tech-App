@@ -35,6 +35,27 @@ export default function RootLayout() {
               presentation: 'card' 
             }} 
           />
+          <Stack.Screen 
+            name="support" 
+            options={{ 
+              headerShown: false,
+              presentation: 'card' 
+            }} 
+          />
+          <Stack.Screen 
+            name="admin-dashboard" 
+            options={{ 
+              headerShown: false,
+              presentation: 'card' 
+            }} 
+          />
+          <Stack.Screen 
+            name="kanban" 
+            options={{ 
+              headerShown: false,
+              presentation: 'card' 
+            }} 
+          />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

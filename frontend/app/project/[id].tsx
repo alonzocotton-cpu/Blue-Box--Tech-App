@@ -21,7 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import { Paths, File } from 'expo-file-system';
+import { writeAsStringAsync, EncodingType, cacheDirectory } from 'expo-file-system/legacy';
 import { format } from 'date-fns';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -574,9 +575,9 @@ export default function ProjectDetailScreen() {
           );
         } else {
           // On mobile: save to file system and share
-          const fileUri = `${FileSystem.cacheDirectory}${result.filename || 'BBA_Report.pdf'}`;
-          await FileSystem.writeAsStringAsync(fileUri, result.pdf_base64, {
-            encoding: FileSystem.EncodingType.Base64,
+          const fileUri = `${cacheDirectory}${result.filename || 'BBA_Report.pdf'}`;
+          await writeAsStringAsync(fileUri, result.pdf_base64, {
+            encoding: EncodingType.Base64,
           });
 
           const canShare = await Sharing.isAvailableAsync();
@@ -1661,7 +1662,7 @@ export default function ProjectDetailScreen() {
               <View style={styles.emptyState}>
                 <Ionicons name="images-outline" size={40} color={COLORS.grayDark} />
                 <Text style={styles.emptyText}>No media yet</Text>
-                <Text style={styles.emptySubtext}>Capture photos and videos of your work</Text>
+                <Text style={styles.emptyText}>Capture photos and videos of your work</Text>
               </View>
             )}
           </View>
@@ -2834,14 +2835,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: COLORS.white,
-  },
-  serviceLogCard: {
-    backgroundColor: COLORS.navyLight,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#2d4a6f',
   },
   serviceLogRow: {
     flexDirection: 'row',
