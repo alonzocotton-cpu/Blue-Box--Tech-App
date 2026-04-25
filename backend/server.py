@@ -57,117 +57,78 @@ app = FastAPI(title="Blue Box Air Tech API")
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# === Temporary Screenshot Download Endpoints ===
-SCREENSHOTS_DIR = "/tmp/app_screenshots"
-IPAD_SCREENSHOTS_DIR = "/tmp/ipad_screenshots"
+# === App Store Screenshot Gallery ===
+SCREENSHOTS_BASE = Path(__file__).parent / "static" / "screenshots"
 
 @api_router.get("/screenshots")
-async def list_screenshots():
-    """List all available screenshots for download"""
-    if not os.path.exists(SCREENSHOTS_DIR):
-        return {"files": [], "message": "No screenshots available"}
-    files = sorted([f for f in os.listdir(SCREENSHOTS_DIR) if f.endswith('.png')])
-    return {
-        "files": files,
-        "download_base": "/api/screenshots/download/",
-        "gallery_url": "/api/screenshots/gallery",
-        "total": len(files),
+async def screenshots_gallery():
+    """HTML gallery of all App Store screenshots with download links"""
+    if not SCREENSHOTS_BASE.exists():
+        return HTMLResponse(content="<h1>No screenshots generated yet</h1>", status_code=404)
+
+    devices = {
+        "iphone_67": "iPhone 6.7\" (1290×2796)",
+        "iphone_65": "iPhone 6.5\" (1284×2778)",
+        "iphone_55": "iPhone 5.5\" (1242×2208)",
+        "ipad_129": "iPad 12.9\" (2048×2732)",
+        "ipad_11": "iPad 11\" (1668×2388)",
     }
 
-@api_router.get("/screenshots/download/{filename}")
-async def download_screenshot(filename: str):
-    """Download a specific screenshot file"""
-    # Check iPhone screenshots first, then iPad
-    filepath = os.path.join(SCREENSHOTS_DIR, filename)
-    if not os.path.exists(filepath):
-        filepath = os.path.join(IPAD_SCREENSHOTS_DIR, filename)
-    if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(filepath, filename=filename, media_type="image/png")
+    html_sections = ""
+    total_count = 0
+    for device_key, device_label in devices.items():
+        device_dir = SCREENSHOTS_BASE / device_key
+        if not device_dir.exists():
+            continue
 
-@api_router.get("/screenshots/gallery")
-async def screenshots_gallery():
-    """HTML gallery page to preview and download all screenshots (iPhone + iPad)"""
-    from fastapi.responses import HTMLResponse
-    
-    iphone_files = sorted([f for f in os.listdir(SCREENSHOTS_DIR) if f.endswith('.png')]) if os.path.exists(SCREENSHOTS_DIR) else []
-    ipad_files = sorted([f for f in os.listdir(IPAD_SCREENSHOTS_DIR) if f.endswith('.png')]) if os.path.exists(IPAD_SCREENSHOTS_DIR) else []
-    
-    def make_card(f):
-        name = f.replace('.png','').replace('_', ' ').title()
-        return f'''
-        <div style="background:#1e293b;border-radius:16px;padding:16px;text-align:center;max-width:280px;">
-            <a href="/api/screenshots/download/{f}" target="_blank">
-                <img src="/api/screenshots/download/{f}" style="width:100%;border-radius:12px;border:2px solid #334155;" loading="lazy" />
-            </a>
-            <p style="color:#c5d93d;margin:12px 0 4px;font-weight:600;font-size:14px;">{name}</p>
-            <a href="/api/screenshots/download/{f}" download="{f}" 
-               style="display:inline-block;background:#c5d93d;color:#0f172a;padding:8px 20px;border-radius:8px;
-                      text-decoration:none;font-weight:700;font-size:13px;margin-top:8px;">
-                Download
-            </a>
+        files = sorted([f for f in os.listdir(device_dir) if f.endswith('.png')])
+        total_count += len(files)
+        images_html = ""
+        for f in files:
+            screen_name = f.replace('.png', '').split('_', 1)[-1].replace('_', ' ').title() if '_' in f else f.replace('.png','')
+            images_html += f'''
+            <div style="display:inline-block;margin:10px;text-align:center;vertical-align:top;">
+                <a href="/api/screenshots/{device_key}/{f}" target="_blank">
+                    <img src="/api/screenshots/{device_key}/{f}" style="height:280px;border-radius:12px;border:2px solid #2d4a6f;cursor:pointer;" loading="lazy" />
+                </a>
+                <div style="color:#94a3b8;font-size:12px;margin-top:6px;">{screen_name}</div>
+                <a href="/api/screenshots/{device_key}/{f}" download="{device_key}_{f}" 
+                   style="display:inline-block;margin-top:4px;padding:4px 12px;background:#c5d93d;color:#0f2744;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none;">
+                    Download
+                </a>
+            </div>'''
+
+        html_sections += f'''
+        <div style="margin-bottom:30px;">
+            <h2 style="color:#c5d93d;font-size:18px;border-bottom:1px solid #2d4a6f;padding-bottom:8px;">{device_label}</h2>
+            <div style="overflow-x:auto;white-space:nowrap;padding:10px 0;">{images_html}</div>
         </div>'''
-    
-    iphone_previews = [f for f in iphone_files if 'preview' in f]
-    iphone_screenshots = [f for f in iphone_files if 'screenshot' in f]
-    ipad_previews = [f for f in ipad_files if 'preview' in f]
-    ipad_screenshots = [f for f in ipad_files if 'screenshot' in f]
-    
+
     html = f'''<!DOCTYPE html>
-<html><head><title>BBA Tech - App Store Assets</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-    body {{ background:#0f172a; color:white; font-family:-apple-system,BlinkMacSystemFont,sans-serif; padding:24px; margin:0; }}
-    h1 {{ color:#c5d93d; text-align:center; }}
-    h2 {{ color:#94a3b8; border-bottom:1px solid #334155; padding-bottom:8px; margin-top:40px; }}
-    h3 {{ color:#64748b; margin-top:24px; }}
-    .grid {{ display:flex; flex-wrap:wrap; gap:20px; justify-content:center; padding:16px 0; }}
-    .tabs {{ display:flex; justify-content:center; gap:12px; margin:24px 0; }}
-    .tab {{ padding:12px 28px; border-radius:10px; font-weight:700; cursor:pointer; font-size:15px; border:none; }}
-    .tab.active {{ background:#c5d93d; color:#0f172a; }}
-    .tab.inactive {{ background:#1e293b; color:#94a3b8; }}
-    .section {{ display:none; }}
-    .section.active {{ display:block; }}
-</style>
-<script>
-function showTab(id) {{
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.tab').forEach(t => {{ t.classList.remove('active'); t.classList.add('inactive'); }});
-    document.getElementById(id).classList.add('active');
-    document.getElementById('tab-'+id).classList.remove('inactive');
-    document.getElementById('tab-'+id).classList.add('active');
-}}
-</script>
-</head><body>
-<h1>BBA Tech — App Store Assets</h1>
-<p style="text-align:center;color:#64748b;font-size:13px;">Click any image to preview full size. Click "Download" to save.</p>
-
-<div class="tabs">
-    <button class="tab active" id="tab-iphone" onclick="showTab('iphone')">iPhone (1242x2688)</button>
-    <button class="tab inactive" id="tab-ipad" onclick="showTab('ipad')">iPad (2048x2732)</button>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BBA Tech - App Store Screenshots</title></head>
+<body style="background:#0f2744;color:white;font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:20px;margin:0;">
+<div style="max-width:1400px;margin:0 auto;">
+    <div style="text-align:center;margin-bottom:30px;">
+        <h1 style="color:#c5d93d;font-size:28px;margin:0;">BBA Tech — App Store Screenshots</h1>
+        <p style="color:#94a3b8;margin-top:8px;">Click any image to view full size. Click "Download" to save. All at exact Apple-required pixel dimensions.</p>
+    </div>
+    {html_sections}
+    <div style="text-align:center;color:#64748b;font-size:12px;margin-top:30px;padding-top:20px;border-top:1px solid #2d4a6f;">
+        Blue Box Air, Inc. • {total_count} screenshots • 5 device sizes • 6 screens each
+    </div>
 </div>
-
-<div id="iphone" class="section active">
-    <h2>iPhone — 3 App Previews</h2>
-    <div class="grid">{"".join(make_card(f) for f in iphone_previews)}</div>
-    <h2>iPhone — 7 Screenshots</h2>
-    <div class="grid">{"".join(make_card(f) for f in iphone_screenshots)}</div>
-</div>
-
-<div id="ipad" class="section">
-    <h2>iPad — 3 App Previews</h2>
-    <div class="grid">{"".join(make_card(f) for f in ipad_previews)}</div>
-    <h2>iPad — 7 Screenshots</h2>
-    <div class="grid">{"".join(make_card(f) for f in ipad_screenshots)}</div>
-</div>
-
-<p style="text-align:center;color:#475569;margin-top:40px;font-size:12px;">
-    Total: {len(iphone_files)} iPhone + {len(ipad_files)} iPad = {len(iphone_files)+len(ipad_files)} files | No PII in iPad screenshots (demo account used)
-</p>
 </body></html>'''
-    
     return HTMLResponse(content=html)
-# === End Screenshot Endpoints ===
+
+@api_router.get("/screenshots/{device}/{filename}")
+async def download_screenshot(device: str, filename: str):
+    """Download a specific screenshot file"""
+    filepath = SCREENSHOTS_BASE / device / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(str(filepath), filename=f"{device}_{filename}", media_type="image/png")
+# === End Screenshot Gallery ===
 
 # === Privacy Policy & Terms ===
 @api_router.api_route("/privacy-policy", methods=["GET", "HEAD"])
@@ -4643,3 +4604,8 @@ async def shutdown_db_client():
 async def startup_seed():
     await seed_roles()
     await seed_admins()
+
+# Mount static files for screenshots
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
