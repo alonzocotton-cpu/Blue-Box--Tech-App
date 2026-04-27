@@ -346,18 +346,52 @@ export default function EquipmentDetailScreen() {
     }
   };
 
-  const getDifferenceColor = (diff: number | null) => {
+  // Color logic: context-aware per reading type
+  // Differential Pressure, Temperature, Humidity: a DROP is positive (green)
+  // Airflow: an INCREASE is positive (green)
+  const getDifferenceColor = (diff: number | null, readingType?: string) => {
     if (diff === null) return COLORS.grayDark;
+    
+    // For these types, a decrease (negative diff) is GOOD (green)
+    const decreaseIsGood = ['Differential Pressure', 'Temperature', 'Humidity'];
+    if (readingType && decreaseIsGood.includes(readingType)) {
+      if (diff < 0) return COLORS.green;   // Drop = positive improvement
+      if (diff > 0) return COLORS.red;     // Increase = negative
+      return COLORS.gray;
+    }
+    
+    // For Airflow and others, an increase is good
     if (diff > 0) return COLORS.green;
     if (diff < 0) return COLORS.red;
     return COLORS.gray;
   };
 
-  const getDifferenceIcon = (diff: number | null) => {
+  const getDifferenceIcon = (diff: number | null, readingType?: string) => {
     if (diff === null) return 'remove';
-    if (diff > 0) return 'arrow-up';
-    if (diff < 0) return 'arrow-down';
+    
+    const decreaseIsGood = ['Differential Pressure', 'Temperature', 'Humidity'];
+    if (readingType && decreaseIsGood.includes(readingType)) {
+      if (diff < 0) return 'trending-down';  // Drop = good
+      if (diff > 0) return 'trending-up';    // Rise = bad
+      return 'remove';
+    }
+    
+    if (diff > 0) return 'trending-up';
+    if (diff < 0) return 'trending-down';
     return 'remove';
+  };
+
+  const getDifferenceLabel = (diff: number | null, readingType?: string) => {
+    if (diff === null) return '';
+    const decreaseIsGood = ['Differential Pressure', 'Temperature', 'Humidity'];
+    if (readingType && decreaseIsGood.includes(readingType)) {
+      if (diff < 0) return 'Improved';
+      if (diff > 0) return 'Increased';
+      return 'No Change';
+    }
+    if (diff > 0) return 'Improved';
+    if (diff < 0) return 'Decreased';
+    return 'No Change';
   };
 
   if (loading || !details) {
@@ -468,13 +502,13 @@ export default function EquipmentDetailScreen() {
                       </View>
                     </View>
                     {isComplete && (
-                      <View style={[styles.diffBadge, { backgroundColor: getDifferenceColor(comp.difference) + '20' }]}>
+                      <View style={[styles.diffBadge, { backgroundColor: getDifferenceColor(comp.difference, comp.type) + '20' }]}>
                         <Ionicons 
-                          name={getDifferenceIcon(comp.difference)} 
+                          name={getDifferenceIcon(comp.difference, comp.type)} 
                           size={14} 
-                          color={getDifferenceColor(comp.difference)} 
+                          color={getDifferenceColor(comp.difference, comp.type)} 
                         />
-                        <Text style={[styles.diffText, { color: getDifferenceColor(comp.difference) }]}>
+                        <Text style={[styles.diffText, { color: getDifferenceColor(comp.difference, comp.type) }]}>
                           {comp.difference !== null ? (comp.difference > 0 ? '+' : '') + comp.difference : '—'}
                         </Text>
                       </View>
@@ -534,19 +568,21 @@ export default function EquipmentDetailScreen() {
                   {/* Difference Display when both values exist */}
                   {isComplete && (
                     <View style={styles.differenceRow}>
-                      <Text style={styles.differenceLabel}>Change:</Text>
-                      <View style={[styles.differenceValue, { backgroundColor: getDifferenceColor(comp.difference) + '15' }]}>
+                      <Text style={styles.differenceLabel}>
+                        {getDifferenceLabel(comp.difference, comp.type)}:
+                      </Text>
+                      <View style={[styles.differenceValue, { backgroundColor: getDifferenceColor(comp.difference, comp.type) + '15' }]}>
                         <Ionicons 
-                          name={getDifferenceIcon(comp.difference)} 
+                          name={getDifferenceIcon(comp.difference, comp.type)} 
                           size={16} 
-                          color={getDifferenceColor(comp.difference)} 
+                          color={getDifferenceColor(comp.difference, comp.type)} 
                         />
-                        <Text style={[styles.differenceNumber, { color: getDifferenceColor(comp.difference) }]}>
+                        <Text style={[styles.differenceNumber, { color: getDifferenceColor(comp.difference, comp.type) }]}>
                           {comp.difference !== null ? Math.abs(comp.difference) : 0} {comp.unit}
                         </Text>
-                        <Text style={[styles.differencePercent, { color: getDifferenceColor(comp.difference) }]}>
+                        <Text style={[styles.differencePercent, { color: getDifferenceColor(comp.difference, comp.type) }]}>
                           ({comp.pre && comp.difference !== null 
-                            ? ((comp.difference / comp.pre.value) * 100).toFixed(1) 
+                            ? Math.abs((comp.difference / comp.pre.value) * 100).toFixed(1) 
                             : 0}%)
                         </Text>
                       </View>
@@ -610,11 +646,40 @@ export default function EquipmentDetailScreen() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Record {readingForm.reading_type}</Text>
+              <Text style={styles.modalTitle}>Record Reading</Text>
               <TouchableOpacity onPress={() => setShowReadingModal(false)}>
                 <Ionicons name="close" size={24} color={COLORS.white} />
               </TouchableOpacity>
             </View>
+
+            {/* Reading Type Selector */}
+            <Text style={styles.fieldLabel}>Reading Type</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {READING_TYPES.map((rt) => (
+                  <TouchableOpacity
+                    key={rt.type}
+                    style={[
+                      styles.readingTypeChip,
+                      readingForm.reading_type === rt.type && styles.readingTypeChipActive,
+                    ]}
+                    onPress={() => setReadingForm({ ...readingForm, reading_type: rt.type, unit: rt.unit })}
+                  >
+                    <Ionicons
+                      name={rt.icon as any}
+                      size={16}
+                      color={readingForm.reading_type === rt.type ? COLORS.navy : COLORS.gray}
+                    />
+                    <Text style={[
+                      styles.readingTypeChipText,
+                      readingForm.reading_type === rt.type && styles.readingTypeChipTextActive,
+                    ]}>
+                      {rt.type === 'Differential Pressure' ? 'Diff. Pressure' : rt.type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
 
             {/* Pre/Post Phase Selection */}
             <View style={styles.phaseSelection}>
@@ -1231,5 +1296,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.lime,
     fontWeight: '500',
+  },
+  readingTypeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: COLORS.navyLight,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+    gap: 6,
+  },
+  readingTypeChipActive: {
+    backgroundColor: COLORS.lime,
+    borderColor: COLORS.lime,
+  },
+  readingTypeChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+  readingTypeChipTextActive: {
+    color: COLORS.navy,
   },
 });
