@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, Body
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, Body, UploadFile, File, Form
 from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -3013,24 +3013,113 @@ async def setup_profile(profile_data: dict):
 # ============ Media (Photos & Videos) ============
 
 @api_router.post("/media")
-async def upload_media(media_data: dict):
-    """Upload photo or video media to a project"""
+async def upload_media(media_data: dict = Body(...)):
+    """Upload photo or video media to a project (JSON base64 method)"""
+    media_uri = media_data.get("media_uri", "")
+    
+    # If it's a base64 data URI, save to file
+    saved_path = ""
+    if media_uri.startswith("data:"):
+        try:
+            import base64 as b64mod
+            header, data = media_uri.split(",", 1)
+            ext = "jpg"
+            if "png" in header:
+                ext = "png"
+            elif "video" in header or "mp4" in header:
+                ext = "mp4"
+            elif "webm" in header:
+                ext = "webm"
+            
+            filename = f"{uuid.uuid4().hex[:12]}.{ext}"
+            filepath = f"/app/backend/uploads/{filename}"
+            with open(filepath, "wb") as f:
+                f.write(b64mod.b64decode(data))
+            saved_path = f"/api/uploads/{filename}"
+            logging.info(f"Saved media file: {filepath} ({os.path.getsize(filepath)} bytes)")
+        except Exception as e:
+            logging.error(f"Failed to save base64 media: {e}")
+            saved_path = ""
+    
     media = {
         "id": f"media-{uuid.uuid4().hex[:8]}",
         "project_id": media_data.get("project_id"),
         "equipment_id": media_data.get("equipment_id"),
-        "media_type": media_data.get("media_type", "photo"),  # photo or video
-        "media_uri": media_data.get("media_uri", ""),
+        "media_type": media_data.get("media_type", "photo"),
+        "media_uri": saved_path if saved_path else media_uri,
+        "original_uri": media_uri[:100] if len(media_uri) > 100 else media_uri,
         "thumbnail": media_data.get("thumbnail", ""),
         "caption": media_data.get("caption", ""),
-        "duration": media_data.get("duration"),  # for videos
+        "duration": media_data.get("duration"),
+        "file_size": media_data.get("file_size"),
         "technician_id": media_data.get("technician_id", "unknown"),
+        "technician_email": media_data.get("technician_email", ""),
         "created_at": datetime.utcnow().isoformat(),
     }
     
     await db.media.insert_one(media)
     media = serialize_doc(media)
     return {"success": True, "media": media}
+
+
+@api_router.post("/media/upload")
+async def upload_media_file(
+    file: UploadFile = File(...),
+    project_id: str = Form(...),
+    equipment_id: str = Form(default=""),
+    media_type: str = Form(default="photo"),
+    technician_id: str = Form(default="unknown"),
+    technician_email: str = Form(default=""),
+    caption: str = Form(default=""),
+):
+    """Upload media file via multipart form (for large files)"""
+    try:
+        # Determine extension
+        ext = file.filename.split(".")[-1].lower() if file.filename else "jpg"
+        if ext not in ["jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "webm", "avi"]:
+            ext = "jpg"
+        
+        filename = f"{uuid.uuid4().hex[:12]}.{ext}"
+        filepath = f"/app/backend/uploads/{filename}"
+        
+        # Save file in chunks
+        file_size = 0
+        with open(filepath, "wb") as f:
+            while chunk := await file.read(1024 * 1024):  # 1MB chunks
+                f.write(chunk)
+                file_size += len(chunk)
+        
+        saved_path = f"/api/uploads/{filename}"
+        logging.info(f"Uploaded media file: {filepath} ({file_size} bytes)")
+        
+        # Detect media type from extension
+        video_exts = ["mp4", "mov", "webm", "avi"]
+        if ext in video_exts:
+            media_type = "video"
+        
+        media = {
+            "id": f"media-{uuid.uuid4().hex[:8]}",
+            "project_id": project_id,
+            "equipment_id": equipment_id,
+            "media_type": media_type,
+            "media_uri": saved_path,
+            "thumbnail": "",
+            "caption": caption,
+            "duration": None,
+            "file_size": file_size,
+            "technician_id": technician_id,
+            "technician_email": technician_email,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        
+        await db.media.insert_one(media)
+        media = serialize_doc(media)
+        return {"success": True, "media": media}
+        
+    except Exception as e:
+        logging.error(f"File upload error: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
 
 @api_router.get("/media/{project_id}")
 async def get_project_media(project_id: str):
@@ -3041,7 +3130,19 @@ async def get_project_media(project_id: str):
 
 @api_router.delete("/media/{media_id}")
 async def delete_media(media_id: str):
-    """Delete a media item"""
+    """Delete a media item and its file"""
+    item = await db.media.find_one({"id": media_id})
+    if item and item.get("media_uri", "").startswith("/api/uploads/"):
+        # Delete the file
+        filename = item["media_uri"].split("/")[-1]
+        filepath = f"/app/backend/uploads/{filename}"
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                logging.info(f"Deleted media file: {filepath}")
+        except Exception as e:
+            logging.warning(f"Failed to delete file {filepath}: {e}")
+    
     await db.media.delete_one({"id": media_id})
     return {"success": True}
 
@@ -4926,3 +5027,8 @@ async def startup_seed():
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Mount uploads directory for media files
+uploads_dir = Path(__file__).parent / "uploads"
+uploads_dir.mkdir(exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")

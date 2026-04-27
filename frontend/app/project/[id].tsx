@@ -178,6 +178,8 @@ export default function ProjectDetailScreen() {
   // Media state (photos & videos)
   const [mediaItems, setMediaItems] = useState<any[]>([]);
   const [mediaLoading, setMediaLoading] = useState(false);
+  const [showMediaModal, setShowMediaModal] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<any>(null);
   const [showMediaViewer, setShowMediaViewer] = useState(false);
   
@@ -896,6 +898,11 @@ export default function ProjectDetailScreen() {
   };
 
   const takePhoto = async () => {
+    if (Platform.OS === 'web') {
+      // On web, use gallery picker instead
+      pickFromGallery('photo');
+      return;
+    }
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission Required', 'Camera permission is required to take photos');
@@ -909,29 +916,15 @@ export default function ProjectDetailScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      try {
-        await fetch(`${API_URL}/api/media`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: id,
-            equipment_id: selectedEquipment?.id,
-            media_type: 'photo',
-            media_uri: result.assets[0].base64 
-              ? `data:image/jpeg;base64,${result.assets[0].base64}` 
-              : result.assets[0].uri,
-          }),
-        });
-        fetchDetails();
-        fetchMedia();
-        Alert.alert('Success', 'Photo captured successfully');
-      } catch (error) {
-        Alert.alert('Error', 'Failed to upload photo');
-      }
+      await uploadMediaAsset(result.assets[0], 'photo');
     }
   };
 
   const recordVideo = async () => {
+    if (Platform.OS === 'web') {
+      pickFromGallery('video');
+      return;
+    }
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission Required', 'Camera permission is required to record videos');
@@ -945,66 +938,101 @@ export default function ProjectDetailScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      try {
-        await fetch(`${API_URL}/api/media`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: id,
-            equipment_id: selectedEquipment?.id,
-            media_type: 'video',
-            media_uri: result.assets[0].uri,
-            duration: result.assets[0].duration,
-          }),
-        });
-        fetchDetails();
-        fetchMedia();
-        Alert.alert('Success', 'Video recorded successfully');
-      } catch (error) {
-        Alert.alert('Error', 'Failed to upload video');
-      }
+      await uploadMediaAsset(result.assets[0], 'video');
     }
   };
 
-  const pickFromGallery = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 0.7,
-      base64: true,
-    });
+  const pickFromGallery = async (filterType?: 'photo' | 'video') => {
+    try {
+      const mediaTypes: ImagePicker.MediaType[] = filterType === 'photo' 
+        ? ['images'] 
+        : filterType === 'video' 
+          ? ['videos'] 
+          : ['images', 'videos'];
 
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      const isVideo = asset.type === 'video';
-      try {
-        await fetch(`${API_URL}/api/media`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: id,
-            media_type: isVideo ? 'video' : 'photo',
-            media_uri: asset.base64 
-              ? `data:image/jpeg;base64,${asset.base64}` 
-              : asset.uri,
-            duration: isVideo ? asset.duration : undefined,
-          }),
-        });
-        fetchDetails();
-        fetchMedia();
-        Alert.alert('Success', `${isVideo ? 'Video' : 'Photo'} added successfully`);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to upload media');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes,
+        quality: 0.7,
+        base64: true,
+        videoMaxDuration: 120,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        const isVideo = asset.type === 'video' || 
+          (asset.uri && (asset.uri.endsWith('.mp4') || asset.uri.endsWith('.mov') || asset.uri.endsWith('.webm')));
+        await uploadMediaAsset(asset, isVideo ? 'video' : 'photo');
       }
+    } catch (error: any) {
+      console.error('Gallery picker error:', error);
+      Alert.alert('Error', 'Failed to pick media from gallery');
+    }
+  };
+
+  const uploadMediaAsset = async (asset: any, mediaType: 'photo' | 'video') => {
+    setUploadProgress(true);
+    setShowMediaModal(false);
+    try {
+      let mediaUri = '';
+      
+      // For images with base64
+      if (asset.base64 && mediaType === 'photo') {
+        const mimeType = asset.uri?.includes('.png') ? 'image/png' : 'image/jpeg';
+        mediaUri = `data:${mimeType};base64,${asset.base64}`;
+      } else if (asset.uri) {
+        // For web blob URIs or native file URIs
+        if (Platform.OS === 'web') {
+          // Fetch the blob and convert to base64
+          try {
+            const response = await fetch(asset.uri);
+            const blob = await response.blob();
+            const reader = new FileReader();
+            mediaUri = await new Promise<string>((resolve, reject) => {
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.error('Blob conversion error:', e);
+            mediaUri = asset.uri;
+          }
+        } else {
+          mediaUri = asset.uri;
+        }
+      }
+
+      const response = await fetch(`${API_URL}/api/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: id,
+          equipment_id: selectedEquipment?.id || '',
+          media_type: mediaType,
+          media_uri: mediaUri,
+          duration: asset.duration,
+          file_size: asset.fileSize,
+          technician_email: currentUserEmail,
+        }),
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        fetchMedia();
+        fetchDetails();
+        Alert.alert('Success', `${mediaType === 'video' ? 'Video' : 'Photo'} uploaded successfully`);
+      } else {
+        Alert.alert('Error', data.detail || 'Upload failed');
+      }
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      Alert.alert('Error', 'Failed to upload media. Please try again.');
+    } finally {
+      setUploadProgress(false);
     }
   };
 
   const showMediaOptions = () => {
-    Alert.alert('Add Media', 'Choose an option', [
-      { text: 'Take Photo', onPress: takePhoto },
-      { text: 'Record Video', onPress: recordVideo },
-      { text: 'Choose from Gallery', onPress: pickFromGallery },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setShowMediaModal(true);
   };
 
   const fetchMedia = async () => {
@@ -1897,7 +1925,15 @@ export default function ProjectDetailScreen() {
 
         {activeTab === 'photos' && (
           <View style={styles.tabContent}>
-            {/* Single Add Media Button */}
+            {/* Upload Progress */}
+            {uploadProgress && (
+              <View style={{ backgroundColor: COLORS.navyLight, borderRadius: 12, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <ActivityIndicator size="small" color={COLORS.lime} />
+                <Text style={{ color: COLORS.lime, fontSize: 14, fontWeight: '600' }}>Uploading media...</Text>
+              </View>
+            )}
+
+            {/* Add Media Button */}
             <TouchableOpacity style={styles.addMediaBtn} onPress={showMediaOptions}>
               <Ionicons name="add-circle" size={22} color={COLORS.navy} />
               <Text style={styles.addMediaBtnText}>Add Photo or Video</Text>
@@ -1913,61 +1949,68 @@ export default function ProjectDetailScreen() {
             {/* Media Grid */}
             {mediaItems.length > 0 ? (
               <View style={styles.photosGrid}>
-                {mediaItems.map((item: any, index: number) => (
-                  <TouchableOpacity
-                    key={item.id || index}
-                    style={styles.photoThumb}
-                    onPress={() => {
-                      setSelectedMedia(item);
-                      setShowMediaViewer(true);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    {item.media_uri && item.media_uri.startsWith('data:image') ? (
-                      <Image
-                        source={{ uri: item.media_uri }}
-                        style={styles.photoThumbImage}
-                        resizeMode="cover"
-                      />
-                    ) : item.media_type === 'video' ? (
-                      <View style={styles.videoThumbOverlay}>
-                        <Ionicons name="play-circle" size={36} color={COLORS.lime} />
-                        {item.duration && (
-                          <Text style={styles.videoDuration}>
-                            {Math.round((item.duration || 0) / 1000)}s
-                          </Text>
-                        )}
-                      </View>
-                    ) : (
-                      <View style={styles.videoThumbOverlay}>
-                        <Ionicons name="image" size={32} color={COLORS.lime} />
-                      </View>
-                    )}
-                    {/* Type badge */}
-                    <View style={[styles.mediaTypeBadge, { backgroundColor: item.media_type === 'video' ? '#ef444480' : COLORS.lime + '80' }]}>
-                      <Text style={styles.mediaTypeBadgeText}>
-                        {item.media_type === 'video' ? 'VID' : 'IMG'}
-                      </Text>
-                    </View>
-                    {/* Timestamp */}
-                    {item.created_at && (
-                      <Text style={styles.mediaTimestamp}>
-                        {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </Text>
-                    )}
-                    {/* Delete button */}
+                {mediaItems.map((item: any, index: number) => {
+                  const imageUri = item.media_uri?.startsWith('/api/') 
+                    ? `${API_URL}${item.media_uri}` 
+                    : item.media_uri;
+                  const isImage = item.media_type === 'photo' && imageUri;
+
+                  return (
                     <TouchableOpacity
-                      style={styles.mediaDeleteBtn}
-                      onPress={(e) => {
-                        e.stopPropagation?.();
-                        handleDeleteMedia(item);
+                      key={item.id || index}
+                      style={styles.photoThumb}
+                      onPress={() => {
+                        setSelectedMedia({ ...item, media_uri: imageUri });
+                        setShowMediaViewer(true);
                       }}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      activeOpacity={0.8}
                     >
-                      <Ionicons name="trash" size={14} color="#fff" />
+                      {isImage ? (
+                        <Image
+                          source={{ uri: imageUri }}
+                          style={styles.photoThumbImage}
+                          resizeMode="cover"
+                        />
+                      ) : item.media_type === 'video' ? (
+                        <View style={styles.videoThumbOverlay}>
+                          <Ionicons name="play-circle" size={36} color={COLORS.lime} />
+                          {item.duration && (
+                            <Text style={styles.videoDuration}>
+                              {Math.round((item.duration || 0) / 1000)}s
+                            </Text>
+                          )}
+                        </View>
+                      ) : (
+                        <View style={styles.videoThumbOverlay}>
+                          <Ionicons name="image" size={32} color={COLORS.lime} />
+                        </View>
+                      )}
+                      {/* Type badge */}
+                      <View style={[styles.mediaTypeBadge, { backgroundColor: item.media_type === 'video' ? '#ef444480' : COLORS.lime + '80' }]}>
+                        <Text style={styles.mediaTypeBadgeText}>
+                          {item.media_type === 'video' ? 'VID' : 'IMG'}
+                        </Text>
+                      </View>
+                      {/* Timestamp */}
+                      {item.created_at && (
+                        <Text style={styles.mediaTimestamp}>
+                          {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </Text>
+                      )}
+                      {/* Delete button */}
+                      <TouchableOpacity
+                        style={styles.mediaDeleteBtn}
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          handleDeleteMedia(item);
+                        }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Ionicons name="trash" size={14} color="#fff" />
+                      </TouchableOpacity>
                     </TouchableOpacity>
-                  </TouchableOpacity>
-                ))}
+                  );
+                })}
               </View>
             ) : (
               <View style={styles.emptyState}>
@@ -2166,7 +2209,7 @@ export default function ProjectDetailScreen() {
             </TouchableOpacity>
           </View>
           <View style={styles.mediaViewerBody}>
-            {selectedMedia?.media_uri && selectedMedia.media_uri.startsWith('data:image') ? (
+            {selectedMedia?.media_uri && selectedMedia.media_type !== 'video' ? (
               <Image
                 source={{ uri: selectedMedia.media_uri }}
                 style={styles.mediaViewerImage}
@@ -2424,6 +2467,74 @@ export default function ProjectDetailScreen() {
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Media Options Modal */}
+      <Modal visible={showMediaModal} transparent animationType="fade">
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowMediaModal(false)}
+        >
+          <View style={[styles.modalContent, { maxHeight: 350 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Media</Text>
+              <TouchableOpacity onPress={() => setShowMediaModal(false)}>
+                <Ionicons name="close" size={24} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ color: COLORS.gray, fontSize: 13, marginBottom: 16 }}>
+              Choose how you'd like to add photos or videos
+            </Text>
+
+            {Platform.OS !== 'web' && (
+              <>
+                <TouchableOpacity
+                  style={mediaModalStyles.optionBtn}
+                  onPress={() => { setShowMediaModal(false); setTimeout(takePhoto, 300); }}
+                >
+                  <View style={mediaModalStyles.optionIcon}>
+                    <Ionicons name="camera" size={24} color={COLORS.navy} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={mediaModalStyles.optionTitle}>Take Photo</Text>
+                    <Text style={mediaModalStyles.optionDesc}>Use camera to capture a photo</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={mediaModalStyles.optionBtn}
+                  onPress={() => { setShowMediaModal(false); setTimeout(recordVideo, 300); }}
+                >
+                  <View style={[mediaModalStyles.optionIcon, { backgroundColor: '#ef4444' + '20' }]}>
+                    <Ionicons name="videocam" size={24} color="#ef4444" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={mediaModalStyles.optionTitle}>Record Video</Text>
+                    <Text style={mediaModalStyles.optionDesc}>Record up to 60 seconds</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={mediaModalStyles.optionBtn}
+              onPress={() => { setShowMediaModal(false); setTimeout(() => pickFromGallery(), 300); }}
+            >
+              <View style={[mediaModalStyles.optionIcon, { backgroundColor: COLORS.lime + '30' }]}>
+                <Ionicons name="images" size={24} color={COLORS.lime} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={mediaModalStyles.optionTitle}>Choose from Gallery</Text>
+                <Text style={mediaModalStyles.optionDesc}>Select photos or videos from your device</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Signature Capture Modal */}
@@ -3911,6 +4022,39 @@ const ttStyles = StyleSheet.create({
     bottom: 10,
     right: 10,
     padding: 4,
+  },
+});
+
+// Media Modal Styles
+const mediaModalStyles = StyleSheet.create({
+  optionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.navyLight,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#2d4a6f',
+  },
+  optionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: COLORS.lime + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
+  optionDesc: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
   },
 });
 
