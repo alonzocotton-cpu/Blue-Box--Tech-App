@@ -1425,46 +1425,41 @@ export default function ProjectDetailScreen() {
         </View>
 
         {/* Tabs */}
-        <View style={styles.tabsContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.tabsScroll}
+          contentContainerStyle={styles.tabsContainer}
+        >
           {['report', 'equipment', 'service', 'time', 'sign', 'photos'].map((tab) => (
             <TouchableOpacity
               key={tab}
               style={[styles.tab, activeTab === tab && styles.tabActive]}
               onPress={() => setActiveTab(tab)}
             >
-              {tab === 'report' && (
-                <Ionicons 
-                  name="document-text" 
-                  size={16} 
-                  color={activeTab === tab ? COLORS.navy : COLORS.gray} 
-                  style={{ marginRight: 4 }}
-                />
-              )}
-              {tab === 'time' && (
-                <Ionicons 
-                  name="time" 
-                  size={16} 
-                  color={activeTab === tab ? COLORS.navy : COLORS.gray} 
-                  style={{ marginRight: 4 }}
-                />
-              )}
-              {tab === 'sign' && (
-                <Ionicons 
-                  name="create" 
-                  size={16} 
-                  color={activeTab === tab ? COLORS.navy : COLORS.gray} 
-                  style={{ marginRight: 4 }}
-                />
-              )}
+              <Ionicons 
+                name={
+                  tab === 'report' ? 'document-text' :
+                  tab === 'equipment' ? 'construct' :
+                  tab === 'service' ? 'build' :
+                  tab === 'time' ? 'time' :
+                  tab === 'sign' ? 'create' :
+                  'camera'
+                } 
+                size={15} 
+                color={activeTab === tab ? COLORS.navy : COLORS.gray} 
+                style={{ marginRight: 5 }}
+              />
               <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
                 {tab === 'report' ? 'Report' 
+                  : tab === 'equipment' ? 'Equip'
                   : tab === 'time' ? 'Time' 
                   : tab === 'sign' ? 'Sign' 
                   : tab.charAt(0).toUpperCase() + tab.slice(1)}
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Content */}
         {activeTab === 'report' && (
@@ -2864,16 +2859,20 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     marginTop: 2,
   },
+  tabsScroll: {
+    marginBottom: 16,
+  },
   tabsContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     gap: 8,
-    marginBottom: 16,
   },
   tab: {
-    flex: 1,
-    paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     backgroundColor: COLORS.navyLight,
     borderRadius: 10,
     borderWidth: 1,
@@ -2884,8 +2883,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.lime,
   },
   tabText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
     color: COLORS.gray,
   },
   tabTextActive: {
