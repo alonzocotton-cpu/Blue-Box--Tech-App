@@ -3612,6 +3612,88 @@ async def get_service_logs(project_id: str):
     logs = await db.service_logs.find({"project_id": project_id}).sort("created_at", -1).to_list(100)
     return {"service_logs": serialize_doc(logs)}
 
+# ============ Delete Account ============
+
+@api_router.delete("/account/delete")
+async def delete_account(data: dict = Body(...)):
+    """Permanently delete a user account and all associated data"""
+    email = data.get("email", "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    deleted_collections = {}
+
+    # Delete from profiles
+    r = await db.profiles.delete_many({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["profiles"] = r.deleted_count
+
+    # Delete from registered_users
+    r = await db.registered_users.delete_many({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["registered_users"] = r.deleted_count
+
+    # Delete from google_sessions
+    r = await db.google_sessions.delete_many({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["google_sessions"] = r.deleted_count
+
+    # Delete from apple_users
+    r = await db.apple_users.delete_many({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["apple_users"] = r.deleted_count
+
+    # Delete from sessions
+    r = await db.sessions.delete_many({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["sessions"] = r.deleted_count
+
+    # Delete from admins
+    r = await db.admins.delete_many({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["admins"] = r.deleted_count
+
+    # Delete support tickets by this user
+    r = await db.support_tickets.delete_many({"user_email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["support_tickets"] = r.deleted_count
+
+    # Delete from team_assignments
+    r = await db.team_assignments.delete_many({"technician_email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["team_assignments"] = r.deleted_count
+
+    # Delete push tokens
+    r = await db.push_tokens.delete_many({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["push_tokens"] = r.deleted_count
+
+    # Delete AI chat history
+    r = await db.ai_chats.delete_many({"user_email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["ai_chats"] = r.deleted_count
+
+    # Delete signatures by this technician
+    r = await db.signatures.delete_many({"technician_email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["signatures"] = r.deleted_count
+
+    # Delete time entries by this technician
+    r = await db.time_entries.delete_many({"technician_email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["time_entries"] = r.deleted_count
+
+    # Delete photos uploaded by this user
+    r = await db.photos.delete_many({"uploaded_by": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["photos"] = r.deleted_count
+
+    # Delete readings by this user
+    r = await db.readings.delete_many({"technician_email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["readings"] = r.deleted_count
+
+    # Delete notifications for this user
+    r = await db.notifications.delete_many({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    deleted_collections["notifications"] = r.deleted_count
+
+    total_deleted = sum(deleted_collections.values())
+    logging.info(f"Account deleted for {email}: {deleted_collections}")
+
+    return {
+        "success": True,
+        "email": email,
+        "total_records_deleted": total_deleted,
+        "details": deleted_collections,
+    }
+
+
 # ============ Signature Capture ============
 
 @api_router.post("/signatures")

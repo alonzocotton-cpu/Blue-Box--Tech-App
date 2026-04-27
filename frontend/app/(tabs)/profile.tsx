@@ -346,6 +346,70 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      '⚠️ Delete Account',
+      'This will permanently delete your account, profile, and all associated data. This action CANNOT be undone.\n\nAre you sure you want to proceed?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account',
+          style: 'destructive',
+          onPress: () => confirmDeleteAccount(),
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      'Final Confirmation',
+      'Type DELETE below to confirm account deletion.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, Delete Forever',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const email = technician?.email;
+              if (!email) {
+                Alert.alert('Error', 'No email found for this account');
+                return;
+              }
+
+              const response = await fetch(`${API_URL}/api/account/delete`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email }),
+              });
+              const data = await response.json();
+
+              if (data.success) {
+                await AsyncStorage.clear();
+                Alert.alert(
+                  'Account Deleted',
+                  `Your account (${email}) has been permanently deleted. ${data.total_records_deleted} records removed.`,
+                  [
+                    {
+                      text: 'OK',
+                      onPress: () => router.replace('/'),
+                    },
+                  ]
+                );
+              } else {
+                Alert.alert('Error', data.detail || 'Failed to delete account');
+              }
+            } catch (error) {
+              console.error('Delete account error:', error);
+              Alert.alert('Error', 'Failed to delete account. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const MenuItem = ({
     icon,
     title,
@@ -1014,6 +1078,21 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </View>
 
+              {/* Danger Zone - Delete Account */}
+              <View style={styles.dangerZone}>
+                <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+                <Text style={styles.dangerZoneDesc}>
+                  Permanently delete your account and all associated data. This action cannot be undone.
+                </Text>
+                <TouchableOpacity
+                  style={styles.deleteAccountButton}
+                  onPress={handleDeleteAccount}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#fff" />
+                  <Text style={styles.deleteAccountText}>Delete Account</Text>
+                </TouchableOpacity>
+              </View>
+
               {/* Footer */}
               <View style={styles.footer}>
                 <Text style={styles.footerText}>Blue Box Air, Inc.</Text>
@@ -1433,6 +1512,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.red,
+  },
+  dangerZone: {
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  dangerZoneTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.red,
+    marginBottom: 6,
+  },
+  dangerZoneDesc: {
+    fontSize: 12,
+    color: COLORS.gray,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.red,
+    paddingVertical: 14,
+    borderRadius: 10,
+    gap: 8,
+  },
+  deleteAccountText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
   },
   footer: {
     alignItems: 'center',
