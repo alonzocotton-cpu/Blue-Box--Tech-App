@@ -1,0 +1,64 @@
+# EAS Build Ignore File
+# Reduces upload size and cache archival time
+
+# Node modules (EAS will install fresh from lockfile)
+node_modules/
+
+# Development and build artifacts
+.expo/
+dist/
+web-build/
+.cache/
+
+# Version control
+.git/
+.gitignore
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files and results
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+jest.config.*
+test_result.md
+
+# Documentation
+README.md
+CHANGELOG.md
+docs/
+
+# CI/CD configs (not needed in build)
+.github/
+.gitlab-ci.yml
+
+# Development scripts
+scripts/
+
+# Linting configs (not needed in build)
+.eslintrc*
+.eslintignore
+.prettierrc*
+.prettierignore
+
+# TypeScript build info
+*.tsbuildinfo
+
+# NPM/Yarn logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files (EAS uses its own env config)
+# .env files are handled by EAS build profiles

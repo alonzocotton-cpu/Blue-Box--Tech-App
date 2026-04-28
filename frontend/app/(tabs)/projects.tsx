@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { format } from 'date-fns';
+import dayjs from 'dayjs';
 
 import { API_BASE_URL } from '../../utils/api';
 

@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { format } from 'date-fns';
+import dayjs from 'dayjs';
 
 // Only import DateTimePicker on native platforms
 let DateTimePicker: any = null;
@@ -527,7 +527,7 @@ export default function EquipmentDetailScreen() {
                         <>
                           <Text style={styles.valueNumber}>{comp.pre.value}</Text>
                           <Text style={styles.valueTime}>
-                            {format(new Date(comp.pre.captured_at), 'MMM d, h:mm a')}
+                            {dayjs(comp.pre.captured_at).format('MMM D, h:mm A')}
                           </Text>
                         </>
                       ) : (
@@ -553,7 +553,7 @@ export default function EquipmentDetailScreen() {
                         <>
                           <Text style={styles.valueNumber}>{comp.post.value}</Text>
                           <Text style={styles.valueTime}>
-                            {format(new Date(comp.post.captured_at), 'MMM d, h:mm a')}
+                            {dayjs(comp.post.captured_at).format('MMM D, h:mm A')}
                           </Text>
                         </>
                       ) : (
@@ -622,7 +622,7 @@ export default function EquipmentDetailScreen() {
                     </View>
                   </View>
                   <Text style={styles.historyTime}>
-                    {reading.captured_at ? format(new Date(reading.captured_at), 'MMM d, yyyy h:mm a') : ''}
+                    {reading.captured_at ? dayjs(reading.captured_at).format('MMM D, YYYY h:mm A') : ''}
                   </Text>
                 </View>
               ))
@@ -735,7 +735,7 @@ export default function EquipmentDetailScreen() {
                   >
                     <Ionicons name="calendar" size={20} color={COLORS.lime} />
                     <Text style={styles.dateTimeText}>
-                      {format(captureDate, 'MMM d, yyyy')}
+                      {dayjs(captureDate).format('MMM D, YYYY')}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
@@ -744,7 +744,7 @@ export default function EquipmentDetailScreen() {
                   >
                     <Ionicons name="time" size={20} color={COLORS.lime} />
                     <Text style={styles.dateTimeText}>
-                      {format(captureDate, 'h:mm a')}
+                      {dayjs(captureDate).format('h:mm A')}
                     </Text>
                   </TouchableOpacity>
                 </View>

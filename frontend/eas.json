@@ -14,7 +14,8 @@
         "buildType": "apk"
       },
       "env": {
-        "APP_ENV": "development"
+        "APP_ENV": "development",
+        "EAS_BUILD_DISABLE_NPM_CACHE": "1"
       }
     },
     "preview": {
@@ -26,7 +27,8 @@
         "buildType": "apk"
       },
       "env": {
-        "APP_ENV": "preview"
+        "APP_ENV": "preview",
+        "EAS_BUILD_DISABLE_NPM_CACHE": "1"
       }
     },
     "production": {
@@ -38,7 +40,9 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "APP_ENV": "production"
+        "APP_ENV": "production",
+        "EAS_BUILD_DISABLE_NPM_CACHE": "1",
+        "EAS_SAVE_CACHE": "0"
       }
     }
   }

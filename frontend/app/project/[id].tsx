@@ -23,7 +23,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Paths, File } from 'expo-file-system';
 import { writeAsStringAsync, EncodingType, cacheDirectory } from 'expo-file-system/legacy';
-import { format } from 'date-fns';
+import dayjs from 'dayjs';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SignatureScreen from 'react-native-signature-canvas';
@@ -727,7 +727,7 @@ export default function ProjectDetailScreen() {
             <div class="report-meta">
               <h2>${project.name || 'Service Report'}</h2>
               <p>Report ID: ${reportData.report_id || 'N/A'}</p>
-              <p>Generated: ${reportData.generated_at ? format(new Date(reportData.generated_at), 'MMM d, yyyy h:mm a') : 'Now'}</p>
+              <p>Generated: ${reportData.generated_at ? dayjs(reportData.generated_at).format('MMM D, YYYY h:mm A') : 'Now'}</p>
               <p>Client: ${project.client_name || project.client || 'N/A'} \u2022 ${project.address || 'N/A'}</p>
             </div>
 
@@ -1307,7 +1307,7 @@ export default function ProjectDetailScreen() {
               <View style={styles.cardRowText}>
                 <Text style={styles.cardLabel}>Schedule</Text>
                 <Text style={styles.cardValue}>
-                  {format(new Date(project.start_date), 'MMM d')} - {project.end_date ? format(new Date(project.end_date), 'MMM d, yyyy') : 'Ongoing'}
+                  {dayjs(project.start_date).format('MMM D')} - {project.end_date ? dayjs(project.end_date).format('MMM D, YYYY') : 'Ongoing'}
                 </Text>
               </View>
             </View>
@@ -1494,7 +1494,7 @@ export default function ProjectDetailScreen() {
                     </View>
                   </View>
                   <Text style={styles.reportGenerated}>
-                    Generated: {reportData.generated_at ? format(new Date(reportData.generated_at), 'MMM d, yyyy h:mm a') : 'Now'}
+                    Generated: {reportData.generated_at ? dayjs(reportData.generated_at).format('MMM D, YYYY h:mm A') : 'Now'}
                   </Text>
                 </View>
 
@@ -1683,7 +1683,7 @@ export default function ProjectDetailScreen() {
                           <Ionicons name="construct" size={16} color={COLORS.lime} />
                           <Text style={styles.serviceLogType}>{log.service_type || 'Service'}</Text>
                           <Text style={styles.serviceLogDate}>
-                            {log.created_at ? format(new Date(log.created_at), 'MMM d, yyyy') : ''}
+                            {log.created_at ? dayjs(log.created_at).format('MMM D, YYYY') : ''}
                           </Text>
                         </View>
                         {log.description ? (
@@ -1905,7 +1905,7 @@ export default function ProjectDetailScreen() {
                 </View>
                 <Text style={styles.logDescription}>{log.description}</Text>
                 <Text style={styles.logDate}>
-                  {log.created_at ? format(new Date(log.created_at), 'MMM d, yyyy h:mm a') : ''}
+                  {log.created_at ? dayjs(log.created_at).format('MMM D, YYYY h:mm A') : ''}
                 </Text>
               </View>
             ))}
