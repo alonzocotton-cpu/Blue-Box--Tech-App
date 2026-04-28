@@ -1377,9 +1377,7 @@ const splashStyles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.white,
     letterSpacing: 3,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    textShadow: '0px 2px 8px rgba(0,0,0,0.6)',
   },
   brandSubtitle: {
     fontSize: 15,
@@ -1387,9 +1385,7 @@ const splashStyles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 6,
     letterSpacing: 1.5,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadow: '0px 1px 4px rgba(0,0,0,0.5)',
   },
   loadingRow: {
     flexDirection: 'row',

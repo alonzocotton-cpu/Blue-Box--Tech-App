@@ -3563,10 +3563,10 @@ async def get_project(project_id: str):
     # Try sf_equipment by account_name
     account_name = project.get("client_name", "")
     if account_name:
-        async for e in db.sf_equipment.find({"account_name": account_name}):
+        async for e in db.sf_equipment.find({"account_name": account_name}).limit(200):
             equipment.append(serialize_doc(e))
     # Also local equipment
-    async for e in db.equipment.find({"project_id": project_id}):
+    async for e in db.equipment.find({"project_id": project_id}).limit(200):
         equipment.append(serialize_doc(e))
     
     readings = await db.readings.find({"project_id": project_id}).to_list(100)
@@ -3599,11 +3599,11 @@ async def get_equipment(project_id: str):
     if project:
         account_name = project.get("client_name", "")
         if account_name:
-            async for e in db.sf_equipment.find({"account_name": account_name}):
+            async for e in db.sf_equipment.find({"account_name": account_name}).limit(200):
                 equipment.append(serialize_doc(e))
     
     # Also include locally added equipment
-    async for e in db.equipment.find({"project_id": project_id}):
+    async for e in db.equipment.find({"project_id": project_id}).limit(200):
         equipment.append(serialize_doc(e))
     
     return {"equipment": equipment}
