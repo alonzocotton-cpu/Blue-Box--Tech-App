@@ -1,0 +1,29 @@
+# Yarn Clean - Safe cleanup to reduce node_modules size
+# Only removes clearly non-essential directories
+
+# Test directories
+__tests__
+powered-test
+
+# Example/demo code
+example
+examples
+
+# CI/CD configs
+.github
+.travis.yml
+.circleci
+appveyor.yml
+.gitlab-ci.yml
+circle.yml
+
+# IDE files
+.idea
+.vscode
+
+# Coverage output
+.nyc_output
+coverage
+
+# Documentation directories (using specific names that won't conflict)
+website

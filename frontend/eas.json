@@ -33,6 +33,9 @@
     },
     "production": {
       "autoIncrement": true,
+      "cache": {
+        "disabled": true
+      },
       "ios": {
         "image": "latest"
       },
@@ -42,7 +45,8 @@
       "env": {
         "APP_ENV": "production",
         "EAS_BUILD_DISABLE_NPM_CACHE": "1",
-        "EAS_SAVE_CACHE": "0"
+        "EAS_SAVE_CACHE": "0",
+        "NO_FLIPPER": "1"
       }
     }
   }
