@@ -268,6 +268,70 @@ async def privacy_policy():
 </body></html>'''
     return HTMLResponse(content=html)
 
+@api_router.api_route("/accessibility", methods=["GET", "HEAD"])
+async def accessibility_statement():
+    """Public accessibility statement for App Store compliance"""
+    from fastapi.responses import HTMLResponse
+    html = '''<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>BBA Tech — Accessibility Statement</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a1628;color:#e0e0e0;margin:0;padding:20px;line-height:1.7;}
+.container{max-width:700px;margin:0 auto;} h1{color:#fff;font-size:24px;text-align:center;margin-bottom:8px;}
+.subtitle{text-align:center;color:#c5d93d;margin-bottom:32px;font-size:14px;}
+h2{color:#c5d93d;font-size:18px;margin-top:28px;border-bottom:1px solid #1a2a44;padding-bottom:8px;}
+p,li{font-size:15px;color:#c0c0c0;} a{color:#c5d93d;}
+.updated{text-align:center;color:#888;font-size:12px;margin-top:32px;}</style></head>
+<body><div class="container">
+<h1>Accessibility Statement</h1>
+<p class="subtitle">Blue Box Air, Inc. — BBA Tech App</p>
+<p class="updated">Last Updated: April 2025</p>
+
+<h2>Our Commitment</h2>
+<p>Blue Box Air, Inc. is committed to ensuring that the BBA Tech mobile application is accessible to all users, including people with disabilities. We strive to meet or exceed the requirements of the Web Content Accessibility Guidelines (WCAG) 2.1 Level AA and applicable accessibility standards.</p>
+
+<h2>Accessibility Features</h2>
+<ul>
+<li><strong>Screen Reader Support:</strong> The app is built with React Native, providing native accessibility labels and hints compatible with VoiceOver (iOS) and TalkBack (Android).</li>
+<li><strong>Dynamic Text Sizing:</strong> The app respects system-level font size preferences, allowing users to adjust text size for readability.</li>
+<li><strong>Touch Targets:</strong> All interactive elements meet minimum touch target sizes (44x44 points on iOS, 48x48dp on Android) for ease of use.</li>
+<li><strong>Color Contrast:</strong> We use high-contrast color combinations throughout the app to ensure text and interactive elements are clearly visible.</li>
+<li><strong>Biometric Authentication:</strong> Face ID and biometric login options provide accessible alternatives to manual credential entry.</li>
+<li><strong>Keyboard Navigation:</strong> The app supports external keyboard navigation for users who cannot use touch input.</li>
+<li><strong>Reduced Motion:</strong> The app respects the system "Reduce Motion" setting to minimize animations for users with motion sensitivities.</li>
+</ul>
+
+<h2>Known Limitations</h2>
+<p>While we work to ensure comprehensive accessibility, some areas may have limitations:</p>
+<ul>
+<li>Signature capture functionality requires touch or stylus input.</li>
+<li>Some PDF report content generated from equipment readings may have limited screen reader compatibility.</li>
+<li>Third-party integrations (Salesforce OAuth) are governed by their own accessibility standards.</li>
+</ul>
+
+<h2>Feedback &amp; Assistance</h2>
+<p>We welcome feedback on the accessibility of BBA Tech. If you encounter any accessibility barriers or have suggestions for improvement, please contact us:</p>
+<ul>
+<li><strong>Email:</strong> <a href="mailto:support@blueboxair.com">support@blueboxair.com</a></li>
+<li><strong>In-App:</strong> Navigate to Profile → Need Help? → Contact Support</li>
+</ul>
+<p>We aim to respond to accessibility feedback within 5 business days and will work to resolve any issues promptly.</p>
+
+<h2>Standards &amp; Guidelines</h2>
+<p>This app is developed with reference to:</p>
+<ul>
+<li>Web Content Accessibility Guidelines (WCAG) 2.1 Level AA</li>
+<li>Apple Human Interface Guidelines — Accessibility</li>
+<li>Android Accessibility Developer Guidelines</li>
+<li>Section 508 of the Rehabilitation Act (where applicable)</li>
+</ul>
+
+<h2>Continuous Improvement</h2>
+<p>We regularly review and update our accessibility practices. This statement is reviewed and updated at least annually, or whenever significant changes are made to the application.</p>
+
+</div></body></html>'''
+    return HTMLResponse(content=html)
+
+
 @api_router.api_route("/terms", methods=["GET", "HEAD"])
 async def terms_of_service():
     """Public terms of service page"""
