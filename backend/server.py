@@ -121,6 +121,33 @@ async def screenshots_gallery():
 </body></html>'''
     return HTMLResponse(content=html)
 
+@api_router.get("/screenshots/download-all")
+async def download_all_screenshots():
+    """Download all App Store screenshots as a single ZIP file"""
+    import zipfile
+    import io
+    from fastapi.responses import StreamingResponse
+
+    if not SCREENSHOTS_BASE.exists():
+        raise HTTPException(status_code=404, detail="No screenshots found")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for device_dir in sorted(SCREENSHOTS_BASE.iterdir()):
+            if not device_dir.is_dir():
+                continue
+            for img_file in sorted(device_dir.iterdir()):
+                if img_file.suffix == '.png':
+                    arcname = f"{device_dir.name}/{img_file.name}"
+                    zf.write(str(img_file), arcname)
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=BlueBoxAir_AppStore_Screenshots.zip"}
+    )
+
 @api_router.get("/screenshots/{device}/{filename}")
 async def download_screenshot(device: str, filename: str):
     """Download a specific screenshot file"""
